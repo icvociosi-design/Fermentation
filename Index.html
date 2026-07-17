@@ -1,0 +1,3271 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Suivi de fermentation</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.1/dist/jspdf.plugin.autotable.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --c-bg: #ffffff; --c-surface: #f5f5f5; --c-border: #e0e0e0; --c-text: #1a1a1a;
+    --c-muted: #6b6b6b; --c-green: #3c5a2e; --c-green-light: #eaf3de; --c-green-text: #3b6d11;
+    --c-amber: #faeeda; --c-amber-text: #854f0b; --c-red: #fcebeb; --c-red-text: #a32d2d;
+    --c-blue: #e6f1fb; --c-blue-text: #185fa5;
+    --radius-sm: 6px; --radius-md: 8px; --radius-lg: 12px;
+    --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+  body { font-family: var(--font); background: var(--c-bg); color: var(--c-text); font-size: 14px; line-height: 1.5; }
+  .app { padding: 16px; max-width: 980px; margin: 0 auto; }
+  /* Panneau admin plein écran */
+  #admin-panel { box-sizing: border-box; }
+  #admin-panel * { box-sizing: border-box; }
+  #admin-panel > div:first-child { display:flex; align-items:center; justify-content:space-between; padding:14px 24px; border-bottom:1px solid var(--c-border); background:#fff; }
+  #admin-panel > div:first-child { display:flex; align-items:center; justify-content:space-between; padding:14px 24px; border-bottom:1px solid var(--c-border); background:#fff; }
+  #admin-content-step { overflow-y:auto; }
+  .admin-tab-pane { padding:32px 40px; }
+  .header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0; flex-wrap: wrap; gap: 10px; padding-bottom: 12px; }
+  .header-title { font-size: 16px; font-weight: 600; }
+  .header-sub { font-size: 12px; color: var(--c-muted); margin-top: 2px; }
+  .header-user { display: flex; align-items: center; gap: 10px; }
+  .user-badge { background: var(--c-green-light); color: var(--c-green-text); border-radius: 20px; padding: 4px 12px; font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+
+  /* Login overlay */
+  .login-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; z-index: 999; }
+  .admin-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+  .login-box { background: #fff; border-radius: var(--radius-lg); padding: 28px 32px; min-width: 300px; box-shadow: 0 8px 32px rgba(0,0,0,.18); }
+  .admin-box-large { width: min(1100px, 95vw); max-height: 90vh; overflow: visible; display: flex; flex-direction: column; }
+  .admin-content-scroll { overflow-y: auto; flex: 1; padding-right: 4px; }
+  .login-title { font-size: 17px; font-weight: 700; margin-bottom: 6px; }
+  .login-sub { font-size: 12px; color: var(--c-muted); margin-bottom: 18px; }
+  .login-users { display: flex; flex-direction: column; gap: 7px; margin-bottom: 16px; max-height: 200px; overflow-y: auto; }
+  .login-user-btn { padding: 9px 14px; border-radius: var(--radius-md); border: 1px solid var(--c-border); background: var(--c-surface); text-align: left; font-size: 13px; font-weight: 500; cursor: pointer; display: flex; align-items: center; gap: 8px; }
+  .login-user-btn:hover { background: var(--c-green-light); border-color: var(--c-green); }
+  .login-new { display: flex; gap: 8px; }
+  .login-new input { flex: 1; }
+  .login-sep { text-align: center; font-size: 11px; color: var(--c-muted); margin: 10px 0; position: relative; }
+  .login-sep::before, .login-sep::after { content:''; position:absolute; top:50%; width:42%; height:1px; background:var(--c-border); }
+  .login-sep::before { left:0; } .login-sep::after { right:0; }
+
+  .nav { display: flex; border-bottom: 1px solid var(--c-border); margin-bottom: 0; }
+  .sticky-top { position: sticky; top: 0; z-index: 100; background: var(--c-bg); border-bottom: 2px solid var(--c-border); padding: 12px 16px 0; margin: -16px -16px 0; box-shadow: 0 2px 8px rgba(0,0,0,.07); }
+  .nav-tab { padding: 8px 16px; font-size: 13px; cursor: pointer; color: var(--c-muted); border-bottom: 2px solid transparent; margin-bottom: -1px; background: none; border-top: none; border-left: none; border-right: none; font-family: var(--font); }
+  .nav-tab.active { color: var(--c-green); font-weight: 600; border-bottom-color: var(--c-green); }
+  .nav-tab:hover:not(.active) { color: var(--c-text); }
+
+  .card { background: var(--c-bg); border: 1px solid var(--c-border); border-radius: var(--radius-lg); padding: 16px; margin-bottom: 12px; }
+  .card-title { font-size: 11px; font-weight: 600; color: var(--c-muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 12px; }
+
+  button { cursor: pointer; font-family: var(--font); }
+  .btn { padding: 7px 14px; border-radius: var(--radius-md); border: 1px solid var(--c-border); font-size: 13px; background: var(--c-surface); color: var(--c-text); font-weight: 500; }
+  .btn:hover { background: #ebebeb; }
+  .btn-primary { background: var(--c-green); color: #fff; border-color: var(--c-green); }
+  .btn-primary:hover { background: #2e4522; }
+  .btn-danger { background: var(--c-red); color: var(--c-red-text); border-color: #f09595; }
+  .btn-sm { padding: 3px 9px; font-size: 12px; }
+
+  label { font-size: 12px; color: var(--c-muted); display: block; margin-bottom: 3px; }
+  input, select { width: 100%; padding: 7px 10px; border: 1px solid var(--c-border); border-radius: var(--radius-sm); font-size: 13px; background: var(--c-bg); color: var(--c-text); font-family: var(--font); }
+  input:focus, select:focus { outline: 2px solid var(--c-green); outline-offset: 1px; border-color: transparent; }
+
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  .grid-5 { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
+  .flex-row { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+  .flex-row > div { flex: 1; min-width: 120px; }
+
+  .metric { background: var(--c-surface); border-radius: var(--radius-md); padding: 12px; }
+  .metric-label { font-size: 11px; color: var(--c-muted); margin-bottom: 4px; }
+  .metric-value { font-size: 20px; font-weight: 600; }
+  .metric-unit { font-size: 12px; color: var(--c-muted); margin-left: 2px; }
+
+  .table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .table th { text-align: left; font-size: 11px; font-weight: 600; color: var(--c-muted); padding: 6px 8px; border-bottom: 1px solid var(--c-border); }
+  .table td { padding: 7px 8px; border-bottom: 1px solid var(--c-border); vertical-align: middle; }
+  .table tr:last-child td { border-bottom: none; }
+  .table-wrap { overflow-x: auto; }
+
+  /* Tableau de configuration des alertes (Paramètres) */
+  .alert-table-wrap { overflow-x: auto; border: 1px solid var(--c-border); border-radius: var(--radius-md); }
+  .alert-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  .alert-table th { position: sticky; top: 0; background: var(--c-surface); text-align: left; font-size: 12px; font-weight: 600; color: var(--c-muted); text-transform: uppercase; letter-spacing: .03em; padding: 8px 8px; border-bottom: 1px solid var(--c-border); white-space: nowrap; z-index: 1; }
+  .alert-table td { padding: 6px 8px; border-bottom: 1px solid var(--c-border); vertical-align: middle; }
+  .alert-table tr:last-child td { border-bottom: none; }
+  .alert-table input, .alert-table select { font-size: 14px; padding: 6px 7px; }
+  .alert-table .cond-cell { display: flex; align-items: center; gap: 4px; flex-wrap: nowrap; min-width: 250px; }
+  .alert-table .cond-cell select.champ-sel { width: 120px; flex-shrink: 0; }
+  .alert-table .cond-cell select.op-sel { width: 64px; flex-shrink: 0; }
+  .alert-table .cond-cell input[type="number"], .alert-table .cond-cell input[type="text"] { width: 64px; flex-shrink: 0; }
+  .alert-table .cond-cell select.val-sel { width: 95px; flex-shrink: 0; }
+  .alert-table .cond-cell .unit { font-size: 11px; color: var(--c-muted); min-width: 36px; flex-shrink: 0; }
+  .alert-table .cond-cell .cond-del { flex-shrink: 0; padding: 3px 7px; font-size: 13px; line-height: 1.4; }
+  .alert-table .cond-empty { color: var(--c-muted); font-size: 13px; font-style: italic; }
+  .alert-table input.nom-input { width: 130px; }
+  .formule-textarea { width: 260px; min-width: 180px; min-height: 32px; max-width: 100%; height: 32px; font-family: monospace; font-size: 13px; padding: 6px 8px; border: 1px solid var(--c-border); border-radius: var(--radius-sm); resize: both; overflow: auto; line-height: 1.4; color: var(--c-text); background: var(--c-bg); }
+  .formule-textarea:focus { outline: 2px solid var(--c-green); outline-offset: 1px; border-color: transparent; }
+  .formula-help-item:hover { background: var(--c-green-light); }
+  .formula-help-item:last-child { border-bottom: none; }
+  .alert-table input.msg-input { width: 150px; }
+  .alert-table select.sev-sel { width: 70px; }
+  .alert-table select.logique-sel { width: 70px; }
+
+  .badge { display: inline-block; padding: 2px 9px; border-radius: 100px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+  .badge-ok   { background: var(--c-green-light); color: var(--c-green-text); }
+  .badge-slow { background: var(--c-amber);        color: var(--c-amber-text); }
+  .badge-stop { background: var(--c-red);           color: var(--c-red-text); }
+  .badge-fast { background: var(--c-blue);          color: var(--c-blue-text); }
+
+  /* Alert badges in table cells */
+  .cell-alerts { display: flex; flex-direction: column; gap: 3px; }
+  .alert-tag { display: inline-flex; align-items: center; gap: 6px; padding: 2px 7px; border-radius: 100px; font-size: 10px; font-weight: 600; white-space: nowrap; }
+  .alert-tag-warn { background: var(--c-amber); color: var(--c-amber-text); }
+  .alert-tag-crit { background: var(--c-red); color: var(--c-red-text); }
+  .alert-tag-info { background: var(--c-blue); color: var(--c-blue-text); }
+  .alert-tag-ok { background: var(--c-green-light); color: var(--c-green-text); }
+
+  .cuve-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
+  .cuve-tab { padding: 5px 13px; border-radius: var(--radius-md); border: 1px solid var(--c-border); font-size: 13px; font-weight: 500; background: var(--c-bg); color: var(--c-muted); }
+  .cuve-tab.active { background: var(--c-surface); color: var(--c-text); border-color: #aaa; }
+  .cuve-tab:hover:not(.active) { background: var(--c-surface); }
+
+  .alert-banner { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: var(--radius-md); font-size: 12px; margin-bottom: 8px; }
+  .alert-warn  { background: var(--c-amber); color: var(--c-amber-text); border: 1px solid #f0c26a; }
+  .alert-crit  { background: var(--c-red);   color: var(--c-red-text);   border: 1px solid #f09595; }
+
+  /* Alert config */
+  .alert-row { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--c-border); }
+  .alert-row:last-child { border-bottom: none; }
+  .alert-row-label { flex: 1; font-size: 13px; }
+  .alert-row .alert-row-name { flex: 1.5; font-size: 13px; }
+  .alert-row input[type="number"], .alert-row input[type="text"] { width: 80px; flex-shrink: 0; }
+  .alert-row input[type="text"] { width: 160px; flex-shrink: 0; }
+  .alert-unit { font-size: 12px; color: var(--c-muted); white-space: nowrap; min-width: 40px; }
+  .alert-cond { font-size: 12px; color: var(--c-muted); white-space: nowrap; }
+  .alert-type-sel { width: 110px; flex-shrink: 0; }
+
+  /* Compact saisie table */
+  .saisie-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .saisie-table th { text-align: left; font-size: 11px; font-weight: 600; color: var(--c-muted); padding: 6px 8px; border-bottom: 1px solid var(--c-border); }
+  .saisie-table td { padding: 5px 6px; border-bottom: 1px solid var(--c-border); vertical-align: middle; }
+  .saisie-table tr:last-child td { border-bottom: none; }
+  .saisie-table input[type="number"], .saisie-table input[type="text"] { padding: 5px 7px; font-size: 13px; }
+  .saisie-table .cuve-name-cell { font-weight: 600; font-size: 13px; white-space: nowrap; max-width: 160px; }
+  .saisie-new-row td { background: var(--c-green-light); }
+
+  .chart-block { position: relative; width: 100%; }
+  .chart-label { font-size: 11px; font-weight: 600; color: var(--c-muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 6px; }
+
+  /* Chart annotations (alert lines) rendered as dataset lines */
+  .cuve-name-input { font-size: 15px; font-weight: 600; border: none; background: transparent; color: var(--c-text); padding: 2px 4px; border-radius: 4px; border-bottom: 1px solid transparent; width: 200px; font-family: var(--font); }
+  .cuve-name-input:focus { outline: none; border-bottom-color: var(--c-green); }
+
+  .empty { text-align: center; padding: 32px 16px; color: var(--c-muted); font-size: 13px; }
+  .empty-icon { font-size: 28px; margin-bottom: 10px; }
+
+  @media (max-width: 600px) {
+    .grid-4 { grid-template-columns: 1fr 1fr; }
+    .grid-5 { grid-template-columns: 1fr 1fr; }
+    .grid-2 { grid-template-columns: 1fr; }
+  }
+
+  /* ── Interface mobile ── */
+  #app-desktop { display: block; }
+  #app-mobile  { display: none; }
+  @media (max-width: 768px) {
+    #app-desktop { display: none; }
+    #app-mobile  { display: block; }
+  }
+  .mobile-wrap { padding: 16px; max-width: 480px; margin: 0 auto; }
+  .mobile-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+  .mobile-title { font-size: 16px; font-weight: 700; }
+  .mobile-card { background: var(--c-surface); border-radius: var(--radius-lg); padding: 16px; margin-bottom: 14px; }
+  .mobile-card h3 { font-size: 13px; font-weight: 600; color: var(--c-muted); text-transform: uppercase; margin-bottom: 12px; }
+
+  /* Bouton saisie vocale */
+  .btn-voice { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; padding: 14px; font-size: 15px; font-weight: 600; background: var(--c-green); color: #fff; border: none; border-radius: var(--radius-lg); cursor: pointer; font-family: var(--font); transition: background .15s; }
+  .btn-voice:hover { background: #2d4422; }
+  .btn-voice.listening { background: #c0392b; animation: pulse 1s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.6} }
+  .voice-feedback { margin-top: 10px; padding: 10px 12px; background: #fff; border-radius: var(--radius-md); border: 1px solid var(--c-border); font-size: 13px; min-height: 40px; color: var(--c-muted); }
+  .voice-feedback.ok { border-color: var(--c-green); color: var(--c-green-text); }
+  .voice-feedback.error { border-color: #e74c3c; color: #c0392b; }
+
+  /* Login Supabase */
+  .sb-login-box { background: #fff; border-radius: var(--radius-lg); padding: 32px 36px; width: min(420px, 90vw); box-shadow: 0 8px 32px rgba(0,0,0,.18); }
+  .sb-login-box input { width: 100%; margin-bottom: 12px; }
+  .sb-error { font-size: 12px; color: var(--c-red-text); margin-bottom: 10px; display: none; padding: 8px 10px; background: var(--c-red); border-radius: var(--radius-sm); }
+  .sb-loading { display: flex; align-items: center; justify-content: center; gap: 10px; font-size: 13px; color: var(--c-muted); }
+  .sb-spinner { width: 18px; height: 18px; border: 2px solid var(--c-border); border-top-color: var(--c-green); border-radius: 50%; animation: spin .7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Admin delete modal */
+  .admin-modal { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: flex; align-items: center; justify-content: center; z-index: 1100; }
+  .admin-box { background: #fff; border-radius: var(--radius-lg); padding: 24px 28px; min-width: 280px; box-shadow: 0 8px 32px rgba(0,0,0,.22); }
+  .admin-box h3 { font-size: 15px; font-weight: 700; margin-bottom: 6px; color: var(--c-red-text); }
+  .admin-box p  { font-size: 12px; color: var(--c-muted); margin-bottom: 14px; }
+  .admin-box input { margin-bottom: 12px; }
+  .admin-err { font-size: 12px; color: var(--c-red-text); margin-bottom: 8px; display: none; }
+  .admin-actions { display: flex; gap: 8px; justify-content: flex-end; }
+
+  /* User list row layout */
+  .login-user-row { display: flex; align-items: center; gap: 6px; }
+  .login-user-row .login-user-btn { flex: 1; }
+  .btn-del-user { flex-shrink: 0; padding: 6px 10px; font-size: 12px; background: var(--c-red); color: var(--c-red-text); border: 1px solid #f09595; border-radius: var(--radius-md); cursor: pointer; font-family: var(--font); }
+  .btn-del-user:hover { background: #f5c6c6; }
+</style>
+</head>
+<body>
+
+<!-- ── Login overlay ────────────────────────────────────────────────────── -->
+<div id="login-overlay" class="login-overlay">
+  <div class="sb-login-box">
+    <!-- État chargement initial -->
+    <div id="login-loading" class="sb-loading">
+      <div class="sb-spinner"></div> Connexion en cours…
+    </div>
+    <!-- Formulaire login -->
+    <div id="login-form" style="display:none">
+      <div class="login-title">🍷 Suivi de fermentation</div>
+      <div class="login-sub" style="margin-bottom:20px">Connectez-vous à votre compte</div>
+      <label style="font-size:12px;font-weight:600;color:var(--c-muted)">Email</label>
+      <input type="email" id="sb-email" placeholder="votre@email.com" autocomplete="email" style="margin-top:4px">
+      <label style="font-size:12px;font-weight:600;color:var(--c-muted)">Mot de passe</label>
+      <input type="password" id="sb-password" placeholder="••••••••" autocomplete="current-password" style="margin-top:4px">
+      <div id="sb-error" class="sb-error"></div>
+      <button class="btn btn-primary" onclick="sbLogin()" style="width:100%;margin-bottom:12px">Se connecter</button>
+      <div style="text-align:right">
+        <button class="btn btn-sm" onclick="showAdminPanel()">⚙ Paramètres admin</button>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- ── Panneau Paramètres plein écran (hors overlay) ──────────────────────── -->
+<div id="admin-panel" style="display:none;position:fixed;inset:0;background:#fff;z-index:1000">
+
+    <!-- En-tête admin -->
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 24px;border-bottom:1px solid var(--c-border);background:#fff;flex-shrink:0">
+      <div style="display:flex;align-items:center;gap:16px">
+        <span style="font-size:16px;font-weight:700">⚙ Paramètres</span>
+        <div id="admin-tabs" class="nav" style="margin:0;border:none;display:none">
+          <button class="nav-tab active" onclick="showAdminTab('comptes',this)">👤 Comptes</button>
+          <button class="nav-tab" onclick="showAdminTab('levures',this)">🍶 Levures</button>
+          <button class="nav-tab" onclick="showAdminTab('variables',this)">𝑥 Variables</button>
+          <button class="nav-tab" onclick="showAdminTab('alertes',this)">🔔 Alertes</button>
+        </div>
+      </div>
+      <button class="btn btn-sm" onclick="showLoginPanel()">✕ Fermer</button>
+    </div>
+
+    <!-- Étape 1 : saisie du code -->
+    <div id="admin-auth-step" style="display:flex;flex:1;align-items:center;justify-content:center">
+      <div style="min-width:280px">
+        <div class="login-sub">Accès réservé à l'administrateur</div>
+        <label style="margin-bottom:4px">Code administrateur</label>
+        <input type="password" id="admin-code-input" placeholder="Code…" autocomplete="off" style="margin-bottom:8px">
+        <div id="admin-err" style="font-size:12px;color:var(--c-red-text);margin-bottom:8px;display:none">Code incorrect.</div>
+        <div style="display:flex;gap:8px;justify-content:flex-end">
+          <button class="btn btn-primary btn-sm" onclick="validateAdminCode()">Accéder</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Étape 2 : contenu par onglet -->
+    <div id="admin-content-step" style="display:none">
+
+      <!-- Onglet Comptes -->
+      <div id="admin-tab-comptes" class="admin-tab-pane">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+          <span style="font-size:13px;font-weight:600;color:var(--c-muted);text-transform:uppercase;letter-spacing:.05em">Comptes utilisateurs</span>
+        </div>
+        <div id="admin-users-list"></div>
+      </div>
+
+      <!-- Onglet Levures -->
+      <div id="admin-tab-levures" class="admin-tab-pane">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+          <span style="font-size:13px;font-weight:600;color:var(--c-muted);text-transform:uppercase;letter-spacing:.05em">Référentiel de levures</span>
+          <button class="btn btn-primary btn-sm" onclick="addGlobalLevure()">+ Nouvelle levure</button>
+        </div>
+        <div id="admin-levures-list"></div>
+        <p style="font-size:11px;color:var(--c-muted);line-height:1.6;margin-top:12px">Le besoin en azote de chaque levure est utilisé dans les variables calculées.</p>
+      </div>
+
+      <!-- Onglet Variables -->
+      <div id="admin-tab-variables" class="admin-tab-pane">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+          <span style="font-size:13px;font-weight:600;color:var(--c-muted);text-transform:uppercase;letter-spacing:.05em">Variables calculées</span>
+          <button class="btn btn-primary btn-sm" onclick="addGlobalVariable()">+ Nouvelle variable</button>
+        </div>
+        <div id="admin-variables-list" style="margin-bottom:12px"></div>
+        <p style="font-size:11px;color:var(--c-muted);line-height:1.7">
+          Tapez une formule commençant par <code>=</code>. Variables disponibles : <code>TAP</code>, <code>AzoteAssimilable</code>, <code>Vitesse</code>, <code>Temperature</code>, <code>Densite</code>, <code>DeltaInit</code>, <code>BesoinAzoteLevure</code> (0=faible, 1=moyen, 2=élevé), ainsi que le nom de toute autre variable déjà créée.<br>
+          Exemple : <code>=TAP*2,5 - AzoteAssimilable + BesoinAzoteLevure*30</code>
+        </p>
+      </div>
+
+      <!-- Onglet Alertes -->
+      <div id="admin-tab-alertes" class="admin-tab-pane">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+          <span style="font-size:13px;font-weight:600;color:var(--c-muted);text-transform:uppercase;letter-spacing:.05em">Alertes globales</span>
+          <button class="btn btn-primary btn-sm" onclick="addGlobalAlert()">+ Nouvelle alerte</button>
+        </div>
+        <div id="admin-alertes-list"></div>
+        <p style="font-size:11px;color:var(--c-muted);margin-top:10px;line-height:1.6">
+          Ces alertes s'appliquent à tous les comptes.<br>
+          Dans le message : <code>{NomVariable}</code> insère la valeur calculée avec son unité, <code>{NomVariable:unite}</code> l'unité seule.<br>
+          Exemple : <code>ajouter {BesoinAzoteTotal} à la cuve</code> → « ajouter 45,30 mg/L à la cuve »<br>
+          <strong>Réactivable</strong> coché = l'alerte se redéclenche après correction. Décoché = une fois validée, elle ne se redéclenche plus pour cette cuve.
+        </p>
+      </div>
+
+    </div>
+</div>
+
+<div id="formula-help-box" style="display:none;position:fixed;background:#fff;border:1px solid var(--c-border);border-radius:var(--radius-sm);box-shadow:0 4px 14px rgba(0,0,0,.15);max-height:220px;overflow-y:auto;z-index:2000;min-width:220px"></div>
+
+
+<div id="app-desktop">
+<div class="app">
+
+  <!-- Sticky header + nav -->
+  <div class="sticky-top">
+  <!-- Header -->
+  <div class="header">
+    <div>
+      <div class="header-title">🍷 Suivi de fermentation</div>
+      <div class="header-sub">Densité en g/cm³ &middot; Vitesse en ΔDensité/jour &middot; Alertes &middot; Graphiques</div>
+    </div>
+    <div class="header-user">
+      <div id="user-badge" class="user-badge" style="display:none"></div>
+      <button class="btn btn-sm" onclick="logout()" id="btn-logout" style="display:none">Changer d'utilisateur</button>
+      <button class="btn btn-sm" id="btn-export-all" onclick="exportAllCuvesCSV()" style="display:none" title="Exporter toutes les cuves en CSV">⬇ Export CSV</button>
+      <button class="btn btn-primary" onclick="addCuve()">+ Nouvelle cuve</button>
+    </div>
+  </div>
+
+  <!-- Nav -->
+  <div class="nav">
+    <button class="nav-tab active" onclick="showView('saisie',this)">Saisie rapide</button>
+    <button class="nav-tab" onclick="showView('tableaux',this)">Dernières Mesures</button>
+    <button class="nav-tab" onclick="showView('detail',this)">Détail cuves</button>
+    <button class="nav-tab" onclick="showView('graphiques',this)">Graphiques</button>
+  </div>
+  </div><!-- /.sticky-top -->
+
+  <div style="height:16px"></div><!-- spacer after sticky -->
+
+  <!-- ── VIEW : Saisie rapide ──────────────────────────────────────────── -->
+  <div id="view-saisie">
+    <div class="card">
+      <div class="card-title">Saisie du jour — toutes les cuves actives</div>
+      <div class="flex-row" style="margin-bottom:16px; max-width:280px">
+        <div>
+          <label>Date de saisie (pour toutes les cuves)</label>
+          <input type="date" id="saisie-date" value="">
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table class="saisie-table">
+          <thead><tr>
+            <th>Cuve</th>
+            <th>Densité (g/cm³)</th>
+            <th>Température (°C)</th>
+            <th>Alertes actives</th>
+            <th></th>
+          </tr></thead>
+          <tbody id="saisie-rapide-body"></tbody>
+        </table>
+      </div>
+      <div style="margin-top:12px; display:flex; gap:8px; align-items:center">
+        <button class="btn btn-primary" onclick="saveSaisieRapide()">💾 Enregistrer la saisie</button>
+        <span id="saisie-feedback" style="font-size:12px;color:var(--c-green-text)"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── VIEW : Détail cuves ───────────────────────────────────────────── -->
+  <div id="view-detail" style="display:none">
+    <div id="detail-shortcuts" style="position:sticky;top:var(--sticky-offset,80px);z-index:90;background:var(--c-bg);display:flex;flex-wrap:wrap;gap:6px;padding:8px 0 8px;margin-bottom:8px;border-bottom:1px solid var(--c-border)"></div>
+    <div id="cuves-list"></div>
+    <div id="no-cuves" class="card" style="display:none">
+      <div class="empty">
+        <div class="empty-icon">⚗️</div>
+        Aucune cuve. Cliquez sur <strong>Nouvelle cuve</strong> pour commencer.
+      </div>
+    </div>
+  </div>
+
+  <!-- ── VIEW : Tableaux ───────────────────────────────────────────────── -->
+  <div id="view-tableaux" style="display:none">
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:2px">
+        <div class="card-title" style="margin:0">Dernières mesures par cuve</div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-sm" onclick="exportCSV()">⬇ Export CSV</button>
+          <button class="btn btn-sm" onclick="exportPDF()">⬇ Export PDF</button>
+        </div>
+      </div>
+      <div id="table-resume-subtitle" style="font-size:11px;color:var(--c-muted);margin-bottom:8px"></div>
+      <div id="alertes-bandeau"></div>
+      <div class="table-wrap">
+        <table class="table">
+          <thead><tr>
+            <th>Cuve</th><th>Dernière date</th><th>Densité (g/cm³)</th>
+            <th>Temp. (°C)</th><th>ΔDensité initiale</th><th>ΔDensité/jour</th><th>ΔDensité/j max</th><th>Alertes</th><th>Travail fait</th>
+          </tr></thead>
+          <tbody id="table-resume-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── VIEW : Graphiques ─────────────────────────────────────────────── -->
+  <div id="view-graphiques" style="display:none">
+    <div class="card">
+      <div id="cuve-tabs-graph" class="cuve-tabs"></div>
+      <div id="graph-metrics" class="grid-5" style="margin-bottom:14px;grid-template-columns:repeat(6,1fr)"></div>
+      <div id="alertes-graph"></div>
+      <div class="chart-label">Vitesse de fermentation (ΔDensité / jour)</div>
+      <div class="chart-block" style="height:220px">
+        <canvas id="chart-vitesse"></canvas>
+      </div>
+      <div id="vitesse-travaux-faits" style="margin-top:6px"></div>
+      <div class="chart-label" style="margin-top:16px">Température (°C)</div>
+      <div class="chart-block" style="height:180px">
+        <canvas id="chart-temp"></canvas>
+      </div>
+    </div>
+  </div>
+
+
+<!-- ── Modal : Nouvelle cuve ────────────────────────────────────────────── -->
+<div id="new-cuve-modal" class="admin-modal-overlay" style="display:none">
+  <div class="login-box" style="width:min(480px, 92vw)">
+    <div class="login-title">🆕 Nouvelle cuve</div>
+    <div class="login-sub">Renseignez les informations de la cuve</div>
+
+    <label>Nom de la cuve *</label>
+    <input type="text" id="nc-nom" placeholder="ex : Cuve 12" style="margin-bottom:10px">
+    <div id="nc-nom-suggestion" style="display:none;font-size:11px;color:var(--c-amber-text);margin:-6px 0 10px"></div>
+
+    <div class="grid-2" style="gap:10px;margin-bottom:10px">
+      <div><label>TAP (% vol.)</label><input type="text" inputmode="decimal" id="nc-tap" placeholder="ex : 13,5"></div>
+      <div><label>Azote assimilable (mg/L)</label><input type="text" inputmode="decimal" id="nc-azote" placeholder="ex : 180"></div>
+    </div>
+
+    <label>Levure utilisée</label>
+    <select id="nc-levure" style="margin-bottom:14px"></select>
+
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn btn-sm" onclick="closeNewCuveModal()">Annuler</button>
+      <button class="btn btn-primary btn-sm" onclick="confirmAddCuve()">Créer la cuve</button>
+    </div>
+  </div>
+</div>
+
+</div><!-- .app -->
+
+<script>
+// ─── État global ──────────────────────────────────────────────────────────────
+var cuves = [];
+var alertes = [];
+var levures = [];
+var variablesCalculees = [];
+var currentUser = null;
+var activeGraphCuve = 0;
+var activeDetailCuve = 0;
+
+function setDetailCuve(i) {
+  activeDetailCuve = i;
+  // Re-render uniquement la barre de raccourcis pour mettre à jour l'état actif
+  var shortcuts = document.getElementById('detail-shortcuts');
+  if (shortcuts) {
+    shortcuts.querySelectorAll('.cuve-tab').forEach(function(btn, idx) {
+      var ci = cuves.indexOf(getSortedCuves()[idx]);
+      btn.classList.toggle('active', ci === activeDetailCuve);
+    });
+  }
+}
+var activeTableCuve = 0;
+var chartVitesse = null;
+var chartTemp    = null;
+var PALETTE = ['#3c5a2e','#a0522d','#1a5276','#7b241c','#1e8449','#6c3483','#b7770d'];
+
+// ─── Alertes par défaut ───────────────────────────────────────────────────────
+var DEFAULT_ALERTES = [
+  { id: 1, nom: 'Vitesse trop lente',      jonctions: [],       conditions: [{ champ:'vitesse', operateur:'lt', valeur: 2 }],   severity: 'warn', message: 'Fermentation lente' },
+  { id: 2, nom: 'Fermentation arrêtée',    jonctions: [],       conditions: [{ champ:'vitesse', operateur:'lt', valeur: 0.5 }], severity: 'crit', message: 'Fermentation arrêtée' },
+  { id: 3, nom: 'Vitesse trop rapide',     jonctions: [],       conditions: [{ champ:'vitesse', operateur:'gt', valeur: 30 }],  severity: 'warn', message: 'Fermentation rapide' },
+  { id: 4, nom: 'Température haute',       jonctions: [],       conditions: [{ champ:'temp', operateur:'gt', valeur: 30 }],     severity: 'crit', message: 'Température trop haute' },
+  { id: 5, nom: 'Température basse',       jonctions: [],       conditions: [{ champ:'temp', operateur:'lt', valeur: 15 }],     severity: 'warn', message: 'Température basse' },
+  { id: 6, nom: 'ΔDensité initiale plage 1', jonctions: [],     conditions: [{ champ:'deltainit', operateur:'between', valeurMin: 10, valeurMax: 20 }], severity: 'warn', message: 'ΔDensité initiale entre 10 et 20' },
+  { id: 7, nom: 'ΔDensité initiale plage 2', jonctions: [],     conditions: [{ champ:'deltainit', operateur:'between', valeurMin: 30, valeurMax: 40 }], severity: 'crit', message: 'ΔDensité initiale entre 30 et 40' },
+  { id: 8, nom: 'Rosé température élevée', jonctions: ['ET'],   conditions: [{ champ:'couleur', operateur:'eq', valeur:'Rosé' }, { champ:'temp', operateur:'gt', valeur: 20 }], severity: 'warn', message: 'Température élevée pour un rosé' },
+];
+
+var DEFAULT_LEVURES = [
+  { id: 1, nom: 'EC1118',    besoinAzote: 'Faible' },
+  { id: 2, nom: 'BM45',      besoinAzote: 'Moyen' },
+  { id: 3, nom: 'D254',      besoinAzote: 'Élevé' },
+  { id: 4, nom: 'VL3',       besoinAzote: 'Moyen' },
+];
+
+// ─── Persistance (localStorage) ──────────────────────────────────────────────
+function getStore() {
+  try { return JSON.parse(localStorage.getItem('fermTracker') || '{}'); } catch(e) { return {}; }
+}
+function saveStore(store) {
+  try { localStorage.setItem('fermTracker', JSON.stringify(store)); } catch(e) {}
+}
+function getUserList() {
+  return getStore().users || [];
+}
+// Alertes globales (partagées entre tous les comptes)
+function loadGlobalAlertes() {
+  var store = getStore();
+  alertes = store.alertes ? JSON.parse(JSON.stringify(store.alertes)) : JSON.parse(JSON.stringify(DEFAULT_ALERTES));
+}
+function saveGlobalAlertes() {
+  var store = getStore();
+  store.alertes = alertes;
+  saveStore(store);
+}
+// Levures globales (partagées entre tous les comptes)
+function loadGlobalLevures() {
+  var store = getStore();
+  levures = store.levures ? JSON.parse(JSON.stringify(store.levures)) : JSON.parse(JSON.stringify(DEFAULT_LEVURES));
+}
+function saveGlobalLevures() {
+  var store = getStore();
+  store.levures = levures;
+  saveStore(store);
+}
+// Variables calculées globales (partagées entre tous les comptes)
+function loadGlobalVariables() {
+  var store = getStore();
+  variablesCalculees = store.variablesCalculees ? JSON.parse(JSON.stringify(store.variablesCalculees)) : [];
+}
+function saveGlobalVariables() {
+  var store = getStore();
+  store.variablesCalculees = variablesCalculees;
+  saveStore(store);
+}
+function saveUserData() {
+  if (!currentUser) return;
+  var store = getStore();
+  if (!store.users) store.users = [];
+  if (store.users.indexOf(currentUser) === -1) store.users.push(currentUser);
+  store['data_' + currentUser] = { cuves: cuves };
+  saveStore(store);
+}
+function loadUserData(username) {
+  var store = getStore();
+  var data = store['data_' + username];
+  if (data) {
+    cuves = data.cuves || [];
+  } else {
+    cuves = []; // nouveau compte : aucune cuve pré-enregistrée
+  }
+  loadGlobalAlertes();
+  loadGlobalLevures();
+  loadGlobalVariables();
+}
+
+// ─── Login ────────────────────────────────────────────────────────────────────
+function renderLogin() {
+  var users = getUserList();
+  var list  = document.getElementById('login-user-list');
+  if (!users.length) {
+    list.innerHTML = '<div style="font-size:12px;color:var(--c-muted);text-align:center;padding:8px 0">Aucun utilisateur enregistré</div>';
+  } else {
+    list.innerHTML = users.map(function(u) {
+      var jsonU = JSON.stringify(u).replace(/'/g, "\\'");
+      return '<button class="login-user-btn" onclick=\'loginAs(' + jsonU + ')\'>👤 ' + escHtml(u) + '</button>';
+    }).join('');
+  }
+}
+
+function loginAs(username) {
+  currentUser = username;
+  loadUserData(username);
+  saveUserData(); // persiste immédiatement l'état initial (démo ou données existantes)
+  document.getElementById('login-overlay').style.display = 'none';
+  document.getElementById('user-badge').style.display = 'flex';
+  document.getElementById('user-badge').innerHTML = '👤 ' + escHtml(username);
+  document.getElementById('btn-logout').style.display = '';
+  renderAll();
+}
+
+function createUser() {
+  var name = document.getElementById('new-username').value.trim();
+  if (!name) { alert('Veuillez saisir un nom.'); return; }
+  var store = getStore();
+  store.users = store.users || [];
+  if (store.users.indexOf(name) !== -1) { loginAs(name); return; }
+  store.users.push(name);
+  saveStore(store);
+  loginAs(name);
+}
+
+function logout() {
+  saveUserData();
+  currentUser = null;
+  cuves = []; alertes = JSON.parse(JSON.stringify(DEFAULT_ALERTES));
+  document.getElementById('login-overlay').style.display = 'flex';
+  document.getElementById('user-badge').style.display = 'none';
+  document.getElementById('btn-logout').style.display = 'none';
+  renderLogin();
+}
+
+// ─── Panneau Paramètres (ADMIN) ───────────────────────────────────────────────
+var _currentAdminTab = 'comptes';
+
+function showAdminPanel() {
+  loadGlobalAlertes();
+  loadGlobalLevures();
+  loadGlobalVariables();
+  document.getElementById('login-overlay').style.display = 'none';
+  var panel = document.getElementById('admin-panel');
+  panel.style.display = 'block';
+  document.getElementById('admin-tabs').style.display = 'none';
+  document.getElementById('admin-auth-step').style.display = 'flex';
+  document.getElementById('admin-content-step').style.display = 'none';
+  document.getElementById('admin-code-input').value = '';
+  document.getElementById('admin-err').style.display = 'none';
+  setTimeout(function(){ document.getElementById('admin-code-input').focus(); }, 80);
+}
+function showLoginPanel() {
+  saveGlobalAlertes();
+  document.getElementById('admin-panel').style.display = 'none';
+  document.getElementById('login-overlay').style.display = 'flex';
+  renderLogin();
+}
+// Hash SHA-256 de 'ADMIN@84' — ne jamais stocker le mot de passe en clair
+// Pour changer le mot de passe : remplacez cette valeur par le SHA-256 du nouveau mot de passe
+var _ADMIN_HASH = 'e2e301dd0e5c4e3c8e5ac5eb4f2f9d0c5d0d4673446d83171848462e7057ebf9';
+
+async function _sha256(str) {
+  var buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+  return Array.from(new Uint8Array(buf)).map(function(b){ return b.toString(16).padStart(2,'0'); }).join('');
+}
+
+async function validateAdminCode() {
+  var code = document.getElementById('admin-code-input').value;
+  var hash = await _sha256(code);
+  if (hash !== _ADMIN_HASH) {
+    document.getElementById('admin-err').style.display = 'block';
+    document.getElementById('admin-code-input').value = '';
+    document.getElementById('admin-code-input').focus();
+    return;
+  }
+  document.getElementById('admin-auth-step').style.display = 'none';
+  document.getElementById('admin-tabs').style.display = 'flex';
+  var cs = document.getElementById('admin-content-step');
+  cs.style.display = 'block';
+  var adminHeader = document.querySelector('#admin-panel > div:first-child');
+  var headerH = adminHeader ? adminHeader.offsetHeight : 57;
+  cs.style.height = (window.innerHeight - headerH) + 'px';
+  cs.style.overflowY = 'auto';
+  showAdminTab(_currentAdminTab, null);
+  renderAdminPanel();
+}
+function showAdminTab(tab, btn) {
+  _currentAdminTab = tab;
+  ['comptes','levures','variables','alertes'].forEach(function(t) {
+    var pane = document.getElementById('admin-tab-' + t);
+    if (pane) pane.style.display = t === tab ? 'block' : 'none';
+  });
+  document.querySelectorAll('#admin-tabs .nav-tab').forEach(function(b){ b.classList.remove('active'); });
+  if (btn) btn.classList.add('active');
+  else {
+    var found = document.querySelectorAll('#admin-tabs .nav-tab');
+    var tabs = ['comptes','levures','variables','alertes'];
+    var idx = tabs.indexOf(tab);
+    if (found[idx]) found[idx].classList.add('active');
+  }
+  if (tab === 'comptes')   renderAdminComptes();
+  if (tab === 'levures')   renderLevuresAdmin();
+  if (tab === 'variables') renderVariablesAdmin();
+  if (tab === 'alertes')   renderAlertesAdmin();
+}
+function renderAdminPanel() {
+  showAdminTab(_currentAdminTab, null);
+}
+function renderAdminComptes() {
+  var users = getUserList();
+  var usersEl = document.getElementById('admin-users-list');
+  if (!usersEl) return;
+  usersEl.innerHTML = users.length
+    ? users.map(function(u) {
+        var safeU = escHtml(u);
+        var jsonU = JSON.stringify(u).replace(/'/g, "\\'");
+        return '<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--c-border)">'
+          + '<span style="flex:1;font-size:13px">👤 ' + safeU + '</span>'
+          + '<button class="btn btn-danger btn-sm" onclick=\'deleteUserAdmin(' + jsonU + ')\'>🗑 Supprimer</button>'
+          + '</div>';
+      }).join('')
+    : '<p style="font-size:13px;color:var(--c-muted)">Aucun compte.</p>';
+}
+
+function renderAlertesAdmin() {
+  // Ne pas recharger depuis le store - utilise l'état mémoire déjà sauvegardé par saveGlobalAlertes()
+  var alertesEl = document.getElementById('admin-alertes-list');
+  if (!alertesEl) return;
+  var maxConds = alertes.reduce(function(mx, a){ return Math.max(mx, getAlerteConditions(a).length); }, 1);
+  maxConds = Math.max(maxConds, 1);
+  // Réserver une colonne supplémentaire pour le bouton "+ Condition" si au moins une alerte peut encore en accueillir
+  var canAddMore = alertes.some(function(a){ return getAlerteConditions(a).length < 3; });
+  if (canAddMore && maxConds < 3) maxConds = maxConds + 1;
+
+  var condHeaders = '<th>Condition 1</th>';
+  for (var k = 1; k < maxConds; k++) {
+    condHeaders += '<th style="width:72px">Combiner</th><th>Condition ' + (k+1) + '</th>';
+  }
+
+  var bodyRows = alertes.map(function(a, ai) {
+    var conditions = getAlerteConditions(a);
+    var sevOpts = ['warn','crit'].map(function(s){
+      return '<option value="'+s+'"'+(a.severity===s?' selected':'')+'>'+( s==='warn'?'⚠':'🔴')+'</option>';
+    }).join('');
+
+    var condCells = '';
+    for (var k = 0; k < maxConds; k++) {
+      // Colonne COMBINER entre conditions (sauf avant la première)
+      if (k > 0) {
+        if (k <= conditions.length - 1) {
+          // Jonction active entre deux conditions existantes — sélecteur individuel
+          var jonctionVal = (a.jonctions && a.jonctions[k-1]) || 'ET';
+          var jOpts = ['ET','OU'].map(function(l){
+            return '<option value="'+l+'"'+(jonctionVal===l?' selected':'')+'>'+l+'</option>';
+          }).join('');
+          condCells += '<td style="text-align:center"><select id="sel-jonc-' + ai + '-' + k + '" class="logique-sel" tabindex="0" onchange="updateJonction(' + ai + ',' + (k-1) + ',this.value)">' + jOpts + '</select></td>';
+        } else {
+          condCells += '<td></td>';
+        }
+      }
+      // Colonne CONDITION
+      if (k < conditions.length) {
+        var delBtn = conditions.length > 1
+          ? '<button class="btn btn-danger btn-sm cond-del" onclick="deleteCondition(' + ai + ',' + k + ')" title="Supprimer">✕</button>'
+          : '';
+        condCells += '<td>' + renderConditionRow(ai, k, conditions[k]) + delBtn + '</td>';
+      } else if (k === conditions.length && conditions.length < 3) {
+        condCells += '<td><button class="btn btn-sm" onclick="addCondition(' + ai + ')">+ Condition</button></td>';
+      } else {
+        condCells += '<td><span class="cond-empty">—</span></td>';
+      }
+    }
+
+    var isReactivable = a.reactivable !== false;
+    return '<tr>'
+      + '<td><input type="text" class="nom-input" value="' + escHtml(a.nom) + '" placeholder="Nom" oninput="updateGlobalAlerte(' + ai + ',\'nom\',this.value)"></td>'
+      + condCells
+      + '<td><input type="text" class="msg-input" id="msg-input-' + ai + '" value="' + escHtml(a.message) + '" placeholder="Message — ex: ajouter {BesoinAzote} {BesoinAzote:unite}" onfocus="showMessageHelp(' + ai + ')" onblur="hideFormulaHelpDelayed()" oninput="updateGlobalAlerte(' + ai + ',\'message\',this.value);filterMessageHelp(' + ai + ')" autocomplete="off"></td>'
+      + '<td><select id="sel-sev-' + ai + '" class="sev-sel" tabindex="0" onchange="updateGlobalAlerte(' + ai + ',\'severity\',this.value)">' + sevOpts + '</select></td>'
+      + '<td style="text-align:center"><input type="checkbox" ' + (isReactivable ? 'checked' : '') + ' title="Réactivable : si décochée, une fois validée (coche \'fait\') cette alerte ne se redéclenchera plus jamais pour la cuve" onchange="updateGlobalAlerte(' + ai + ',\'reactivable\',this.checked)" style="width:16px;height:16px;cursor:pointer"></td>'
+      + '<td><button class="btn btn-danger btn-sm" onclick="deleteGlobalAlerte(' + ai + ')" title="Supprimer l\'alerte">🗑</button></td>'
+      + '</tr>';
+  }).join('');
+
+  if (!alertes.length) {
+    alertesEl.innerHTML = '<p style="font-size:13px;color:var(--c-muted)">Aucune alerte.</p>';
+    return;
+  }
+
+  alertesEl.innerHTML = '<div class="alert-table-wrap"><table class="alert-table"><thead><tr>'
+    + '<th>Nom</th>'
+    + condHeaders
+    + '<th>Message</th>'
+    + '<th>Sévérité</th>'
+    + '<th>Réactivable</th>'
+    + '<th></th>'
+    + '</tr></thead><tbody>' + bodyRows + '</tbody></table></div>'
+    + '<div style="font-size:11px;color:var(--c-muted);margin-top:6px;line-height:1.6">'
+    + 'SI les conditions sont vraies (combinées par ET/OU si plusieurs), l\'alerte s\'affiche avec son message et sa sévérité.<br>'
+    + '<strong>Réactivable</strong> (coché) : une fois la coche "fait" cochée dans le tableau, l\'alerte redevient active si les conditions se redéclenchent plus tard. Décoché : une fois validée, elle ne se redéclenche plus jamais pour cette cuve.'
+    + '</div>';
+}
+
+function renderConditionRow(ai, condIdx, cond) {
+  var champ = cond.champ || 'vitesse';
+  var allChamps = getConditionChamps();
+  var champDef = allChamps.find(function(cc){ return cc.value === champ; }) || allChamps[0];
+  var champOpts = allChamps.map(function(cc){
+    return '<option value="' + cc.value + '"' + (cc.value===champ?' selected':'') + '>' + cc.label + '</option>';
+  }).join('');
+
+  var operateurs = champDef.kind === 'select' ? CONDITION_OPERATEURS_SELECT : CONDITION_OPERATEURS_NUM;
+  var operateur = cond.operateur || operateurs[0].value;
+  var opOpts = operateurs.map(function(op){
+    return '<option value="' + op.value + '"' + (op.value===operateur?' selected':'') + '>' + op.label + '</option>';
+  }).join('');
+
+  var valeurHtml;
+  if (champDef.kind === 'select') {
+    var selOpts = champDef.options.map(function(o){
+      return '<option value="' + o + '"' + (cond.valeur===o?' selected':'') + '>' + o + '</option>';
+    }).join('');
+    valeurHtml = '<select class="val-sel" onchange="updateCondition(' + ai + ',' + condIdx + ',\'valeur\',this.value)">' + selOpts + '</select>';
+  } else if (operateur === 'between') {
+    valeurHtml = '<input type="text" inputmode="decimal" value="' + fmtDecimal(cond.valeurMin||0) + '" placeholder="min" onchange="updateCondition(' + ai + ',' + condIdx + ',\'valeurMin\',this.value)">'
+      + '<span class="unit">→</span>'
+      + '<input type="text" inputmode="decimal" value="' + fmtDecimal(cond.valeurMax||0) + '" placeholder="max" onchange="updateCondition(' + ai + ',' + condIdx + ',\'valeurMax\',this.value)">'
+      + '<span class="unit">' + champDef.unite + '</span>';
+  } else {
+    valeurHtml = '<input type="text" inputmode="decimal" value="' + fmtDecimal(cond.valeur!==undefined?cond.valeur:0) + '" onchange="updateCondition(' + ai + ',' + condIdx + ',\'valeur\',this.value)">'
+      + '<span class="unit">' + champDef.unite + '</span>';
+  }
+
+  var uid = 'a' + ai + 'c' + condIdx;
+
+  return '<div class="cond-cell">'
+    + '<select id="sel-champ-' + uid + '" class="champ-sel" tabindex="0" onchange="updateCondition(' + ai + ',' + condIdx + ',\'champ\',this.value)">' + champOpts + '</select>'
+    + '<select id="sel-op-' + uid + '" class="op-sel" tabindex="0" onchange="updateCondition(' + ai + ',' + condIdx + ',\'operateur\',this.value)">' + opOpts + '</select>'
+    + valeurHtml
+    + '</div>';
+}
+function deleteUserAdmin(username) {
+  var usersEl = document.getElementById('admin-users-list');
+  var users = getUserList();
+  usersEl.innerHTML = users.map(function(u) {
+    var safeU = escHtml(u);
+    var jsonU = JSON.stringify(u).replace(/'/g, "\\'");
+    if (u === username) {
+      return '<div style="display:flex;align-items:center;gap:8px;padding:9px 10px;border-bottom:1px solid var(--c-border);background:var(--c-red);border-radius:var(--radius-md);flex-wrap:wrap">'
+        + '<span style="flex:1;font-size:13px;color:var(--c-red-text)">🗑 Supprimer <strong>' + safeU + '</strong> et toutes ses données ?</span>'
+        + '<button class="btn btn-danger btn-sm" onclick=\'confirmDeleteUserAdmin(' + jsonU + ')\'>Confirmer</button>'
+        + '<button class="btn btn-sm" onclick="renderAdminPanel()">Annuler</button>'
+        + '</div>';
+    }
+    return '<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--c-border)">'
+      + '<span style="flex:1;font-size:13px">👤 ' + safeU + '</span>'
+      + '<button class="btn btn-danger btn-sm" onclick=\'deleteUserAdmin(' + jsonU + ')\'>🗑 Supprimer</button>'
+      + '</div>';
+  }).join('');
+}
+function confirmDeleteUserAdmin(username) {
+  var store = getStore();
+  store.users = (store.users || []).filter(function(u){ return u !== username; });
+  delete store['data_' + username];
+  saveStore(store);
+  renderAdminPanel();
+}
+
+// ─── Levures (Paramètres) ──────────────────────────────────────────────────
+function renderLevuresAdmin() {
+  loadGlobalLevures();
+  var el = document.getElementById('admin-levures-list');
+  if (!el) return;
+  var besoinOpts = ['Faible','Moyen','Élevé'];
+  el.innerHTML = levures.length
+    ? '<div class="alert-table-wrap"><table class="alert-table"><thead><tr>'
+      + '<th>Nom de la levure</th><th>Besoin en azote</th><th></th>'
+      + '</tr></thead><tbody>'
+      + levures.map(function(l, li) {
+          var opts = besoinOpts.map(function(o){
+            return '<option value="' + o + '"' + (l.besoinAzote===o?' selected':'') + '>' + o + '</option>';
+          }).join('');
+          return '<tr>'
+            + '<td><input type="text" class="nom-input" value="' + escHtml(l.nom) + '" placeholder="ex : EC1118" oninput="updateLevureSilent(' + li + ',\'nom\',this.value)" onblur="updateLevure(' + li + ',\'nom\',this.value)"></td>'
+            + '<td><select style="width:100px" onchange="updateLevure(' + li + ',\'besoinAzote\',this.value)">' + opts + '</select></td>'
+            + '<td><button class="btn btn-danger btn-sm" onclick="deleteLevure(' + li + ')">🗑</button></td>'
+            + '</tr>';
+        }).join('')
+      + '</tbody></table></div>'
+    : '<p style="font-size:13px;color:var(--c-muted)">Aucune levure définie.</p>';
+}
+// updateLevure : sauvegarde en mémoire sans re-rendre (pour éviter perte de focus à chaque frappe)
+function updateLevureSilent(li, field, val) {
+  if (levures[li]) { levures[li][field] = val; saveGlobalLevures(); }
+}
+function updateLevure(li, field, val) {
+  if (levures[li]) { levures[li][field] = val; saveGlobalLevures(); }
+  renderLevuresAdmin();
+}
+function deleteLevure(li) {
+  levures.splice(li, 1);
+  saveGlobalLevures();
+  renderLevuresAdmin();
+}
+function addGlobalLevure() {
+  levures.push({ id: Date.now(), nom: 'Nouvelle levure', besoinAzote: 'Moyen' });
+  saveGlobalLevures();
+  renderLevuresAdmin();
+}
+
+// ─── Moteur de formules (variables calculées type Excel) ────────────────────
+// Variables de base disponibles dans toute formule, dérivées d'une cuve
+function getBaseFormulaVars(c) {
+  loadGlobalLevures();
+  var calc  = calcVitesse(c.mesures);
+  var last  = calc.length ? calc[calc.length - 1] : null;
+  var vits  = calc.filter(function(m, i){ return i > 0; });
+  var lastV = vits.length ? vits[vits.length - 1] : null;
+  var levureDef = levures.find(function(l){ return l.nom === c.levure; });
+  var besoinMap = { 'Faible': 0, 'Moyen': 1, 'Élevé': 2 };
+  return {
+    TAP: (c.tap !== null && c.tap !== undefined) ? c.tap : 0,
+    AzoteAssimilable: (c.azoteAssimilable !== null && c.azoteAssimilable !== undefined) ? c.azoteAssimilable : 0,
+    Vitesse: lastV ? lastV.vitesse : 0,
+    Temperature: last ? last.temperature : 0,
+    Densite: last ? last.densite : 0,
+    DeltaInit: (last && last.deltaInit !== undefined) ? last.deltaInit : 0,
+    BesoinAzoteLevure: levureDef ? (besoinMap[levureDef.besoinAzote] !== undefined ? besoinMap[levureDef.besoinAzote] : 1) : 1
+  };
+}
+
+// ─── Parseur de formules type Excel : +,-,*,/,(), comparaisons et SI() imbriqué (jusqu'à 5 niveaux) ──
+// Grammaire :
+//   expr      := terme (('+'|'-') terme)*
+//   terme     := facteur (('*'|'/') facteur)*
+//   facteur   := nombre | '(' expr ')' | 'SI(' comparaison ';' expr ';' expr ')' | '-' facteur
+//   comparaison := expr ('>'|'>='|'<'|'<='|'='|'<>') expr
+function evalFormulaExpr(expr, vars) {
+  if (!expr || !expr.trim()) return null;
+  try {
+    // 1) Normaliser les virgules décimales en points (ex: "TAP*2,5" -> "TAP*2.5")
+    //    mais on protège d'abord les points-virgules (séparateurs SI) en les marquant
+    var marked = expr.replace(/;/g, '\u0001');
+    marked = marked.replace(/(\d),(\d)/g, '$1.$2');
+    marked = marked.replace(/\u0001/g, ';');
+
+    // 2) Substituer les variables par leur valeur numérique (les plus longs noms d'abord)
+    var names = Object.keys(vars).sort(function(a,b){ return b.length - a.length; });
+    names.forEach(function(name) {
+      var re = new RegExp('\\b' + name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'g');
+      var v = vars[name];
+      marked = marked.replace(re, '(' + (typeof v === 'number' && !isNaN(v) ? v : 0) + ')');
+    });
+
+    // 3) Vérifier qu'il ne reste que des caractères autorisés (sécurité)
+    if (!/^[\s0-9+\-*/().;<>=SI]*$/.test(marked)) return null;
+
+    // 4) Parser et évaluer
+    var pos = { i: 0 };
+    var result = parseExprLevel(marked, pos, 0);
+    skipSpaces(marked, pos);
+    if (pos.i < marked.length) return null; // caractères restants non consommés = formule invalide
+    return (typeof result === 'number' && isFinite(result)) ? result : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function skipSpaces(s, pos) {
+  while (pos.i < s.length && /\s/.test(s[pos.i])) pos.i++;
+}
+
+// expr := terme (('+'|'-') terme)*
+function parseExprLevel(s, pos, depth) {
+  var val = parseTerme(s, pos, depth);
+  skipSpaces(s, pos);
+  while (pos.i < s.length && (s[pos.i] === '+' || s[pos.i] === '-')) {
+    var op = s[pos.i]; pos.i++;
+    var rhs = parseTerme(s, pos, depth);
+    val = (op === '+') ? val + rhs : val - rhs;
+    skipSpaces(s, pos);
+  }
+  return val;
+}
+
+// terme := facteur (('*'|'/') facteur)*
+function parseTerme(s, pos, depth) {
+  var val = parseFacteur(s, pos, depth);
+  skipSpaces(s, pos);
+  while (pos.i < s.length && (s[pos.i] === '*' || s[pos.i] === '/')) {
+    var op = s[pos.i]; pos.i++;
+    var rhs = parseFacteur(s, pos, depth);
+    if (op === '*') { val = val * rhs; }
+    else { if (rhs === 0) throw new Error('Division par zéro'); val = val / rhs; }
+    skipSpaces(s, pos);
+  }
+  return val;
+}
+
+// facteur := nombre | '(' expr ')' | 'SI(' ... ')' | '-' facteur | '+' facteur
+function parseFacteur(s, pos, depth) {
+  skipSpaces(s, pos);
+  if (pos.i >= s.length) throw new Error('Fin de formule inattendue');
+
+  // SI( ... )
+  if (s.slice(pos.i, pos.i + 3).toUpperCase() === 'SI(') {
+    if (depth >= 5) throw new Error('Trop de SI() imbriqués (max 5)');
+    pos.i += 3;
+    var cond = parseComparaison(s, pos, depth + 1);
+    skipSpaces(s, pos);
+    if (s[pos.i] !== ';') throw new Error('Attendu ; après la condition du SI()');
+    pos.i++;
+    var valVrai = parseExprLevel(s, pos, depth + 1);
+    skipSpaces(s, pos);
+    if (s[pos.i] !== ';') throw new Error('Attendu ; après la valeur vraie du SI()');
+    pos.i++;
+    var valFaux = parseExprLevel(s, pos, depth + 1);
+    skipSpaces(s, pos);
+    if (s[pos.i] !== ')') throw new Error('Attendu ) pour fermer le SI()');
+    pos.i++;
+    return cond ? valVrai : valFaux;
+  }
+
+  // Signe unaire
+  if (s[pos.i] === '-') { pos.i++; return -parseFacteur(s, pos, depth); }
+  if (s[pos.i] === '+') { pos.i++; return parseFacteur(s, pos, depth); }
+
+  // Parenthèses
+  if (s[pos.i] === '(') {
+    pos.i++;
+    var v = parseExprLevel(s, pos, depth);
+    skipSpaces(s, pos);
+    if (s[pos.i] !== ')') throw new Error('Parenthèse manquante');
+    pos.i++;
+    return v;
+  }
+
+  // Nombre
+  var start = pos.i;
+  while (pos.i < s.length && /[0-9.]/.test(s[pos.i])) pos.i++;
+  if (pos.i === start) throw new Error('Nombre attendu, trouvé : ' + s.slice(pos.i, pos.i+10));
+  return parseFloat(s.slice(start, pos.i));
+}
+
+// comparaison := expr ('>='|'<='|'<>'|'>'|'<'|'=') expr  → retourne un booléen
+function parseComparaison(s, pos, depth) {
+  var left = parseExprLevel(s, pos, depth);
+  skipSpaces(s, pos);
+  var op = null;
+  if (s.slice(pos.i, pos.i+2) === '>=' || s.slice(pos.i, pos.i+2) === '<=' || s.slice(pos.i, pos.i+2) === '<>') {
+    op = s.slice(pos.i, pos.i+2); pos.i += 2;
+  } else if (s[pos.i] === '>' || s[pos.i] === '<' || s[pos.i] === '=') {
+    op = s[pos.i]; pos.i++;
+  } else {
+    throw new Error('Opérateur de comparaison attendu dans le SI()');
+  }
+  var right = parseExprLevel(s, pos, depth);
+  switch (op) {
+    case '>':  return left > right;
+    case '<':  return left < right;
+    case '>=': return left >= right;
+    case '<=': return left <= right;
+    case '=':  return left === right;
+    case '<>': return left !== right;
+  }
+}
+
+// Calcule la valeur de toutes les variables calculées pour une cuve donnée, dans l'ordre de définition
+function computeVariablesForCuve(c) {
+  loadGlobalVariables();
+  var vars = getBaseFormulaVars(c);
+  var results = {};
+  variablesCalculees.forEach(function(v) {
+    var formule = (v.formule || '').trim();
+    if (formule.charAt(0) === '=') formule = formule.slice(1);
+    var val = formule ? evalFormulaExpr(formule, vars) : null;
+    results[v.nom] = val;
+    if (val !== null) vars[v.nom] = val;
+  });
+  return results;
+}
+
+function renderVariablesAdmin() {
+  loadGlobalVariables();
+  var el = document.getElementById('admin-variables-list');
+  if (!el) return;
+  if (!variablesCalculees.length) {
+    el.innerHTML = '<p style="font-size:13px;color:var(--c-muted)">Aucune variable calculée.</p>';
+    return;
+  }
+  el.innerHTML = '<div class="table-wrap"><table class="alert-table"><thead><tr>'
+    + '<th>Nom de la variable</th><th>Formule (commence par =)</th><th>Unité</th><th>Afficher</th><th></th>'
+    + '</tr></thead><tbody>'
+    + variablesCalculees.map(function(v, vi) {
+        var isVisible = v.visible !== false; // true par défaut (rétrocompatibilité)
+        return '<tr>'
+          + '<td><input type="text" class="nom-input" value="' + escHtml(v.nom) + '" placeholder="ex : BesoinAzoteTotal" oninput="updateVariableSilent(' + vi + ',\'nom\',this.value)" onblur="updateVariable(' + vi + ',\'nom\',this.value)"></td>'
+          + '<td><textarea id="formule-input-' + vi + '" class="formule-textarea" placeholder="=SI(TAP>13,4;100;0)" onfocus="showFormulaHelp(' + vi + ')" onblur="updateVariable(' + vi + ',\'formule\',this.value);hideFormulaHelpDelayed(' + vi + ')" oninput="updateVariableSilent(' + vi + ',\'formule\',this.value);filterFormulaHelp(' + vi + ')" autocomplete="off">' + escHtml(v.formule || '') + '</textarea></td>'
+          + '<td><input type="text" style="width:70px" value="' + escHtml(v.unite || '') + '" placeholder="mg/L" oninput="updateVariableSilent(' + vi + ',\'unite\',this.value)" onblur="updateVariable(' + vi + ',\'unite\',this.value)"></td>'
+          + '<td style="text-align:center"><input type="checkbox" ' + (isVisible ? 'checked' : '') + ' title="Afficher cette variable dans Détail cuves" onchange="updateVariable(' + vi + ',\'visible\',this.checked)" style="width:16px;height:16px;cursor:pointer"></td>'
+          + '<td><button class="btn btn-danger btn-sm" onclick="deleteVariable(' + vi + ')" title="Supprimer">🗑</button></td>'
+          + '</tr>';
+      }).join('')
+    + '</tbody></table></div>';
+}
+// ─── Aide à la frappe pour les formules (autocomplétion des variables disponibles) ──
+function getFormulaSuggestions() {
+  // Variables de base toujours disponibles + mots-clé SI + variables calculées déjà nommées
+  var base = [
+    { nom: 'TAP', desc: 'Taux d\'Alcool Probable (% vol.)' },
+    { nom: 'AzoteAssimilable', desc: 'Azote assimilable (mg/L)' },
+    { nom: 'Vitesse', desc: 'ΔDensité/jour (dernière mesure)' },
+    { nom: 'Temperature', desc: 'Température (dernière mesure)' },
+    { nom: 'Densite', desc: 'Densité (dernière mesure)' },
+    { nom: 'DeltaInit', desc: 'ΔDensité initiale' },
+    { nom: 'BesoinAzoteLevure', desc: 'Besoin azote levure (0=Faible, 1=Moyen, 2=Élevé)' },
+    { nom: 'SI(', desc: 'SI(condition;valeur_vraie;valeur_fausse)' }
+  ];
+  loadGlobalVariables();
+  var calcVars = variablesCalculees
+    .filter(function(v){ return v.nom && v.nom.trim(); })
+    .map(function(v){ return { nom: v.nom, desc: 'Variable calculée' + (v.unite ? ' (' + v.unite + ')' : '') }; });
+  return base.concat(calcVars);
+}
+
+function getCurrentWordFragment(input) {
+  var val = input.value;
+  var pos = input.selectionStart || val.length;
+  var start = pos;
+  while (start > 0 && /[A-Za-zÀ-ÿ0-9_(]/.test(val[start-1])) start--;
+  return { fragment: val.slice(start, pos), start: start, end: pos };
+}
+
+function showFormulaHelp(vi) {
+  filterFormulaHelp(vi);
+}
+
+function filterFormulaHelp(vi) {
+  var input = document.getElementById('formule-input-' + vi);
+  var box = document.getElementById('formula-help-box');
+  if (!input || !box) return;
+  var info = getCurrentWordFragment(input);
+  var frag = info.fragment.toLowerCase();
+  var suggestions = getFormulaSuggestions();
+  if (frag) {
+    suggestions = suggestions.filter(function(s){ return s.nom.toLowerCase().indexOf(frag) !== -1; });
+  }
+  if (!suggestions.length) { box.style.display = 'none'; return; }
+
+  box.innerHTML = suggestions.map(function(s) {
+    var jsonNom = JSON.stringify(s.nom).replace(/'/g, "\\'");
+    return '<div class="formula-help-item" onmousedown=\'insertFormulaSuggestion(' + vi + ',' + jsonNom + ')\' style="padding:6px 10px;cursor:pointer;font-size:12px;border-bottom:1px solid var(--c-border)">'
+      + '<span style="font-family:monospace;font-weight:600;color:var(--c-green-text)">' + escHtml(s.nom) + '</span>'
+      + '<span style="color:var(--c-muted);margin-left:8px">' + escHtml(s.desc) + '</span>'
+      + '</div>';
+  }).join('');
+
+  // Positionner la boîte sous le champ
+  var rect = input.getBoundingClientRect();
+  box.style.left = (rect.left + window.scrollX) + 'px';
+  box.style.top  = (rect.bottom + window.scrollY + 2) + 'px';
+  box.style.display = 'block';
+}
+
+function insertFormulaSuggestion(vi, suggestionNom) {
+  var input = document.getElementById('formule-input-' + vi);
+  var box = document.getElementById('formula-help-box');
+  if (!input) return;
+  var info = getCurrentWordFragment(input);
+  var val = input.value;
+  var newVal = val.slice(0, info.start) + suggestionNom + val.slice(info.end);
+  input.value = newVal;
+  var newPos = info.start + suggestionNom.length;
+  input.focus();
+  input.setSelectionRange(newPos, newPos);
+  if (box) box.style.display = 'none';
+  // Met à jour le modèle en mémoire sans relancer un rendu complet (qui ferait perdre le focus)
+  loadGlobalVariables();
+  if (variablesCalculees[vi]) {
+    variablesCalculees[vi].formule = newVal;
+    saveGlobalVariables();
+  }
+  // Affiche les suggestions suivantes si on vient d'insérer "SI("
+  filterFormulaHelp(vi);
+}
+
+function hideFormulaHelpDelayed() {
+  // Délai pour laisser le temps au mousedown de la suggestion de s'exécuter avant le blur
+  setTimeout(function() {
+    var box = document.getElementById('formula-help-box');
+    if (box) box.style.display = 'none';
+  }, 150);
+}
+
+// ─── Aide à la frappe pour les messages d'alerte (insère {Variable} et {Variable:unite}) ──
+function getMessageSuggestions() {
+  loadGlobalVariables();
+  var suggestions = [];
+  variablesCalculees
+    .filter(function(v){ return v.nom && v.nom.trim(); })
+    .forEach(function(v) {
+      suggestions.push({ token: '{' + v.nom + '}', desc: 'Valeur calculée' + (v.unite ? ' (' + v.unite + ')' : '') });
+      if (v.unite) {
+        suggestions.push({ token: '{' + v.nom + ':unite}', desc: 'Unité : ' + v.unite });
+      }
+    });
+  return suggestions;
+}
+
+function showMessageHelp(ai) {
+  filterMessageHelp(ai);
+}
+
+function filterMessageHelp(ai) {
+  var input = document.getElementById('msg-input-' + ai);
+  var box = document.getElementById('formula-help-box');
+  if (!input || !box) return;
+  var val = input.value;
+  var pos = input.selectionStart || val.length;
+  // Cherche si on est en train de taper une accolade ouvrante { suivie de texte
+  var beforeCursor = val.slice(0, pos);
+  var braceIdx = beforeCursor.lastIndexOf('{');
+  var closeBraceIdx = beforeCursor.lastIndexOf('}');
+  var suggestions = getMessageSuggestions();
+
+  if (braceIdx === -1 || braceIdx < closeBraceIdx) {
+    // Pas dans une accolade ouverte : afficher toutes les suggestions disponibles
+    if (!suggestions.length) { box.style.display = 'none'; return; }
+  } else {
+    var frag = beforeCursor.slice(braceIdx).toLowerCase();
+    suggestions = suggestions.filter(function(s){ return s.token.toLowerCase().indexOf(frag) !== -1; });
+    if (!suggestions.length) { box.style.display = 'none'; return; }
+  }
+
+  box.innerHTML = suggestions.map(function(s) {
+    var jsonToken = JSON.stringify(s.token).replace(/'/g, "\\'");
+    return '<div class="formula-help-item" onmousedown=\'insertMessageSuggestion(' + ai + ',' + jsonToken + ')\' style="padding:6px 10px;cursor:pointer;font-size:12px;border-bottom:1px solid var(--c-border)">'
+      + '<span style="font-family:monospace;font-weight:600;color:var(--c-green-text)">' + escHtml(s.token) + '</span>'
+      + '<span style="color:var(--c-muted);margin-left:8px">' + escHtml(s.desc) + '</span>'
+      + '</div>';
+  }).join('');
+
+  var rect = input.getBoundingClientRect();
+  box.style.left = (rect.left + window.scrollX) + 'px';
+  box.style.top  = (rect.bottom + window.scrollY + 2) + 'px';
+  box.style.display = 'block';
+}
+
+function insertMessageSuggestion(ai, token) {
+  var input = document.getElementById('msg-input-' + ai);
+  var box = document.getElementById('formula-help-box');
+  if (!input) return;
+  var val = input.value;
+  var pos = input.selectionStart || val.length;
+  var beforeCursor = val.slice(0, pos);
+  var braceIdx = beforeCursor.lastIndexOf('{');
+  var closeBraceIdx = beforeCursor.lastIndexOf('}');
+  var start = (braceIdx !== -1 && braceIdx > closeBraceIdx) ? braceIdx : pos;
+  var newVal = val.slice(0, start) + token + val.slice(pos);
+  input.value = newVal;
+  var newPos = start + token.length;
+  input.focus();
+  input.setSelectionRange(newPos, newPos);
+  if (box) box.style.display = 'none';
+  loadGlobalAlertes();
+  if (alertes[ai]) {
+    alertes[ai].message = newVal;
+    saveGlobalAlertes();
+  }
+}
+
+function addGlobalVariable() {
+  loadGlobalVariables();
+  variablesCalculees.push({ id: Date.now(), nom: 'NouvelleVariable', formule: '', unite: '' });
+  saveGlobalVariables();
+  renderVariablesAdmin();
+  refreshOtherViews();
+}
+function updateVariableSilent(vi, field, val) {
+  if (variablesCalculees[vi]) { variablesCalculees[vi][field] = val; saveGlobalVariables(); }
+}
+function updateVariable(vi, field, val) {
+  loadGlobalVariables();
+  if (variablesCalculees[vi]) { variablesCalculees[vi][field] = val; }
+  saveGlobalVariables();
+  renderVariablesAdmin();
+  refreshOtherViews();
+}
+function deleteVariable(vi) {
+  loadGlobalVariables();
+  variablesCalculees.splice(vi, 1);
+  saveGlobalVariables();
+  renderVariablesAdmin();
+  refreshOtherViews();
+}
+
+function updateJonction(ai, jIndex, val) {
+  var a = alertes[ai];
+  if (!a.jonctions) a.jonctions = [];
+  a.jonctions[jIndex] = val;
+  saveGlobalAlertes();
+  // Pas de re-render : le select est déjà à la bonne valeur via this.value
+}
+function updateGlobalAlerte(ai, field, val) {
+  alertes[ai][field] = val;
+  saveGlobalAlertes();
+  // Re-render seulement pour les champs qui changent la structure visuelle du tableau
+  if (field === 'severity' || field === 'reactivable') {
+    // Ces champs ne changent pas la structure du tableau, pas de re-render nécessaire
+  }
+  // Pour les champs texte (nom, message), l'input garde sa valeur naturellement
+  // Pour severity/reactivable les éléments HTML sont déjà mis à jour par l'événement
+}
+function updateCondition(ai, condIdx, field, val) {
+  var a = alertes[ai];
+  var conditions = getAlerteConditions(a);
+  if (!a.conditions) a.conditions = JSON.parse(JSON.stringify(conditions));
+  var cond = a.conditions[condIdx];
+  if (!cond) return;
+
+  var needsRender = false;
+
+  if (field === 'champ') {
+    var allChamps = getConditionChamps();
+    var champDef = allChamps.find(function(cc){ return cc.value === val; }) || allChamps[0];
+    cond.champ = val;
+    if (champDef.kind === 'select') {
+      cond.operateur = 'eq';
+      cond.valeur = champDef.options[0];
+      delete cond.valeurMin; delete cond.valeurMax;
+    } else {
+      cond.operateur = 'lt';
+      cond.valeur = 0;
+      delete cond.valeurMin; delete cond.valeurMax;
+    }
+    needsRender = true; // changer le champ modifie les opérateurs disponibles
+  } else if (field === 'operateur') {
+    var wasOrIsBetween = (cond.operateur === 'between' || val === 'between');
+    cond.operateur = val;
+    if (val === 'between') {
+      cond.valeurMin = cond.valeurMin || 0;
+      cond.valeurMax = cond.valeurMax || 0;
+      delete cond.valeur;
+    } else {
+      if (cond.valeur === undefined) cond.valeur = 0;
+      delete cond.valeurMin; delete cond.valeurMax;
+    }
+    if (wasOrIsBetween) needsRender = true; // entre…et change la structure des inputs
+  } else if (field === 'valeurMin' || field === 'valeurMax') {
+    var pd = parseDecimal(val);
+    cond[field] = isNaN(pd) ? 0 : pd;
+  } else if (field === 'valeur') {
+    var allChamps2 = getConditionChamps();
+    var champDef2 = allChamps2.find(function(cc){ return cc.value === cond.champ; });
+    if (champDef2 && champDef2.kind === 'select') {
+      cond.valeur = val;
+    } else {
+      var pd2 = parseDecimal(val);
+      cond.valeur = isNaN(pd2) ? 0 : pd2;
+    }
+  }
+  saveGlobalAlertes();
+  if (needsRender) {
+    // Délai pour laisser le navigateur terminer l'événement avant de reconstruire le DOM
+    setTimeout(function(){ renderAdminPanel(); }, 0);
+  }
+}
+function addCondition(ai) {
+  var a = alertes[ai];
+  var conditions = getAlerteConditions(a);
+  if (!a.conditions) a.conditions = JSON.parse(JSON.stringify(conditions));
+  if (a.conditions.length >= 3) return;
+  if (!a.jonctions) a.jonctions = [];
+  a.jonctions.push('ET'); // jonction par défaut entre la nouvelle condition et la précédente
+  a.conditions.push({ champ: 'temp', operateur: 'gt', valeur: 0 });
+  saveGlobalAlertes();
+  renderAdminPanel();
+}
+function deleteCondition(ai, condIdx) {
+  var a = alertes[ai];
+  var conditions = getAlerteConditions(a);
+  if (!a.conditions) a.conditions = JSON.parse(JSON.stringify(conditions));
+  if (a.conditions.length <= 1) return;
+  a.conditions.splice(condIdx, 1);
+  // Supprimer la jonction correspondante
+  if (!a.jonctions) a.jonctions = [];
+  // La jonction supprimée est celle avant condIdx (si condIdx > 0) ou après (si condIdx === 0)
+  var jIdx = condIdx > 0 ? condIdx - 1 : 0;
+  a.jonctions.splice(jIdx, 1);
+  saveGlobalAlertes();
+  renderAdminPanel();
+}
+function deleteGlobalAlerte(ai) {
+  alertes.splice(ai, 1);
+  saveGlobalAlertes();
+  renderAdminPanel();
+}
+function addGlobalAlert() {
+  alertes.push({
+    id: Date.now(),
+    nom: 'Nouvelle alerte',
+    jonctions: [],
+    conditions: [{ champ: 'temp', operateur: 'gt', valeur: 20 }],
+    severity: 'warn',
+    message: 'Alerte personnalisée'
+  });
+  saveGlobalAlertes();
+  renderAdminPanel();
+}
+
+
+// ─── Champs disponibles pour les conditions d'alerte ─────────────────────────
+var CONDITION_CHAMPS_BASE = [
+  { value: 'vitesse',    label: 'ΔDensité/j',          unite: 'Δg/cm³/j', kind: 'number' },
+  { value: 'temp',       label: 'Température',          unite: '°C',        kind: 'number' },
+  { value: 'densite',    label: 'Densité',               unite: 'g/cm³',     kind: 'number' },
+  { value: 'deltainit',  label: 'ΔDensité initiale',     unite: 'g/cm³',     kind: 'number' },
+  { value: 'couleur',    label: 'Couleur',               unite: '',          kind: 'select', options: ['Blanc','Rosé','Rouge'] },
+];
+// Retourne la liste complète des champs disponibles : champs de base + variables calculées (préfixées var:) + état d'acquittement des alertes (préfixé alerte:)
+function getConditionChamps() {
+  loadGlobalVariables();
+  // Ne pas recharger alertes ici - déjà en mémoire, et ce rechargement écrase les modifications en cours
+  var varChamps = variablesCalculees.map(function(v) {
+    return { value: 'var:' + v.nom, label: v.nom + ' (calculée)', unite: v.unite || '', kind: 'number' };
+  });
+  var alerteChamps = alertes
+    .filter(function(a){ return a.nom && a.nom.trim(); })
+    .map(function(a) {
+      return { value: 'alerte:' + a.id, label: a.nom + ' validée', unite: '', kind: 'select', options: ['Oui','Non'] };
+    });
+  return CONDITION_CHAMPS_BASE.concat(varChamps).concat(alerteChamps);
+}
+var CONDITION_CHAMPS = CONDITION_CHAMPS_BASE; // conservé pour compatibilité, non utilisé directement pour le rendu
+var CONDITION_OPERATEURS_NUM = [
+  { value: 'lt',  label: '\u003c' },
+  { value: 'lte', label: '\u2264' },
+  { value: 'gt',  label: '\u003e' },
+  { value: 'gte', label: '\u2265' },
+  { value: 'eq',  label: '=' },
+  { value: 'between', label: 'entre…et' },
+];
+var CONDITION_OPERATEURS_SELECT = [
+  { value: 'eq',  label: '=' },
+  { value: 'neq', label: '\u2260' },
+];
+
+function getChampValue(c, champ) {
+  if (champ && champ.indexOf('var:') === 0) {
+    var varName = champ.slice(4);
+    var computed = computeVariablesForCuve(c);
+    return (computed[varName] !== undefined) ? computed[varName] : null;
+  }
+  if (champ && champ.indexOf('alerte:') === 0) {
+    var alerteId = champ.slice(7);
+    var calcForAlerte = calcVitesse(c.mesures);
+    var lastDateForAlerte = calcForAlerte.length ? calcForAlerte[calcForAlerte.length - 1].date : null;
+    var isValidated = lastDateForAlerte ? isOccurrenceValidated(c, alerteId, lastDateForAlerte) : false;
+    return isValidated ? 'Oui' : 'Non';
+  }
+  var calc  = calcVitesse(c.mesures);
+  var last  = calc.length ? calc[calc.length - 1] : null;
+  if (!last) return null;
+  var vits  = calc.filter(function(m, i){ return i > 0; });
+  var lastV = vits.length ? vits[vits.length - 1] : null;
+  switch (champ) {
+    case 'vitesse':   return lastV ? lastV.vitesse : null;
+    case 'temp':      return last.temperature;
+    case 'densite':   return last.densite;
+    case 'deltainit': return last.deltaInit !== undefined ? last.deltaInit : null;
+    case 'couleur':   return c.couleur || '';
+    default:          return null;
+  }
+}
+
+function evalCondition(c, cond) {
+  if (!cond || !cond.champ) return false;
+  var val = getChampValue(c, cond.champ);
+  if (val === null || val === undefined) return false;
+  switch (cond.operateur) {
+    case 'lt':  return val < cond.valeur;
+    case 'lte': return val <= cond.valeur;
+    case 'gt':  return val > cond.valeur;
+    case 'gte': return val >= cond.valeur;
+    case 'eq':  return String(val) === String(cond.valeur);
+    case 'neq': return String(val) !== String(cond.valeur);
+    case 'between': return val > (cond.valeurMin||0) && val < (cond.valeurMax||0);
+    default: return false;
+  }
+}
+
+// Convertit une ancienne alerte (format à plat) en liste de conditions
+function getAlerteConditions(a) {
+  if (a.conditions) return a.conditions;
+  // Conversion legacy
+  switch (a.type) {
+    case 'vitesse_lt':   return [{ champ:'vitesse',   operateur:'lt',  valeur: a.seuil }];
+    case 'vitesse_gt':   return [{ champ:'vitesse',   operateur:'gt',  valeur: a.seuil }];
+    case 'temp_lt':      return [{ champ:'temp',      operateur:'lt',  valeur: a.seuil }];
+    case 'temp_gt':      return [{ champ:'temp',      operateur:'gt',  valeur: a.seuil }];
+    case 'densite_lt':   return [{ champ:'densite',   operateur:'lt',  valeur: a.seuil }];
+    case 'densite_gt':   return [{ champ:'densite',   operateur:'gt',  valeur: a.seuil }];
+    case 'deltainit_gt': return [{ champ:'deltainit', operateur:'gt',  valeur: a.seuil }];
+    case 'deltainit_lt': return [{ champ:'deltainit', operateur:'lt',  valeur: a.seuil }];
+    case 'deltainit_range': return [{ champ:'deltainit', operateur:'between', valeurMin: a.seuilMin, valeurMax: a.seuilMax }];
+    default: return [];
+  }
+}
+
+// Remplace {NomVariable} et {NomVariable:unite} dans un message par la valeur calculée pour cette cuve
+function resolveAlertMessage(message, c) {
+  if (!message || message.indexOf('{') === -1) return message;
+  loadGlobalVariables();
+  var computedVars = computeVariablesForCuve(c);
+  var varsByName = {};
+  variablesCalculees.forEach(function(v){ varsByName[v.nom] = v; });
+
+  return message.replace(/\{([^{}:]+)(:unite)?\}/g, function(full, varName, uniteFlag) {
+    var trimmedName = varName.trim();
+    if (uniteFlag) {
+      var vDef = varsByName[trimmedName];
+      return vDef ? (vDef.unite || '') : full;
+    }
+    var val = computedVars[trimmedName];
+    if (val === null || val === undefined) return full;
+    var vDef2 = varsByName[trimmedName];
+    var formatted = fmtDecimal(val, 2);
+    return vDef2 && vDef2.unite ? (formatted + ' ' + vDef2.unite) : formatted;
+  });
+}
+
+// Calcule les alertes dont les conditions sont remplies, sans tenir compte de l'acquittement (coche)
+function computeTriggeredAlertes(c) {
+  var calc  = calcVitesse(c.mesures);
+  var last  = calc.length ? calc[calc.length - 1] : null;
+  var triggered = [];
+  if (!last) return triggered;
+  alertes.forEach(function(a) {
+    var conditions = getAlerteConditions(a);
+    if (!conditions.length) return;
+    var results = conditions.map(function(cond){ return evalCondition(c, cond); });
+    var jonctions = a.jonctions || [];
+    var isTriggered = results[0];
+    for (var i = 1; i < results.length; i++) {
+      var op = jonctions[i-1] || a.logique || 'ET';
+      if (op === 'OU') isTriggered = isTriggered || results[i];
+      else             isTriggered = isTriggered && results[i];
+    }
+    if (isTriggered) {
+      var resolved = Object.assign({}, a, { message: resolveAlertMessage(a.message, c) });
+      triggered.push(resolved);
+    }
+  });
+  return triggered;
+}
+
+// ─── Modèle d'acquittement "trace par occurrence" ─────────────────────────────
+// cuve.alertesValidees est un tableau de clés "alerteId@dateMesure" : chaque coche est
+// liée à l'alerte ET à la date de mesure précise où elle a été cochée. Une fois cochée,
+// cette occurrence reste verte pour toujours (trace immuable de ce jour-là).
+
+function makeOccurrenceKey(alerteId, date) {
+  return String(alerteId) + '@' + date;
+}
+
+// Garantit que c.alertesValidees est toujours un tableau (migre l'ancien format objet si besoin)
+function getValideesList(c) {
+  var v = c.alertesValidees;
+  if (Array.isArray(v)) return v;
+  // Ancien format (objet { alerteId: date }) ou absent : on repart sur une liste vide
+  // (les anciennes coches ne sont pas critiques à préserver, l'important est de ne plus planter)
+  c.alertesValidees = [];
+  return c.alertesValidees;
+}
+
+function isOccurrenceValidated(c, alerteId, date) {
+  var list = getValideesList(c);
+  return list.indexOf(makeOccurrenceKey(alerteId, date)) !== -1;
+}
+
+// Une alerte non réactivable a-t-elle déjà été validée à N'IMPORTE QUELLE date pour cette cuve ?
+function isNonReactivableAlreadyValidated(c, alerteId) {
+  var list = getValideesList(c);
+  var prefix = String(alerteId) + '@';
+  return list.some(function(key){ return key.indexOf(prefix) === 0; });
+}
+
+// Retourne les alertes actives à la dernière mesure, EXCLUANT celles déjà cochées pour cette occurrence précise,
+// et excluant définitivement les non réactivables déjà validées un jour quelconque
+function evalAlertesCuve(c) {
+  var triggered = computeTriggeredAlertes(c);
+  var calc = calcVitesse(c.mesures);
+  var lastDate = calc.length ? calc[calc.length - 1].date : null;
+  if (!lastDate) return [];
+  return triggered.filter(function(a) {
+    var alerteDef = alertes.find(function(al){ return String(al.id) === String(a.id); });
+    var isReactivable = !alerteDef || alerteDef.reactivable !== false;
+    if (!isReactivable && isNonReactivableAlreadyValidated(c, a.id)) return false;
+    return !isOccurrenceValidated(c, a.id, lastDate);
+  });
+}
+
+// Retourne TOUTES les alertes actives à la dernière mesure (acquittées incluses), avec .acquittee = bool
+function evalAlertesCuveAll(c) {
+  var triggered = computeTriggeredAlertes(c);
+  var calc = calcVitesse(c.mesures);
+  var lastDate = calc.length ? calc[calc.length - 1].date : null;
+  if (!lastDate) return [];
+  return triggered
+    .filter(function(a) {
+      var alerteDef = alertes.find(function(al){ return String(al.id) === String(a.id); });
+      var isReactivable = !alerteDef || alerteDef.reactivable !== false;
+      // Ne pas masquer ici : on veut voir l'état coché même si déjà validé aujourd'hui
+      if (!isReactivable && isNonReactivableAlreadyValidated(c, a.id) && !isOccurrenceValidated(c, a.id, lastDate)) return false;
+      return true;
+    })
+    .map(function(a) {
+      return Object.assign({}, a, { acquittee: isOccurrenceValidated(c, a.id, lastDate) });
+    });
+}
+
+// Coche/décoche le "Travail fait" pour une alerte sur l'occurrence de la dernière mesure de la cuve
+function toggleAlerteAcquittement(ci, alerteId, checked) {
+  var c = cuves[ci];
+  if (!c) return;
+  var calc = calcVitesse(c.mesures);
+  var lastDate = calc.length ? calc[calc.length - 1].date : null;
+  if (!lastDate) return;
+  var list = getValideesList(c);
+  var key = makeOccurrenceKey(alerteId, lastDate);
+  var idx = list.indexOf(key);
+  if (checked) {
+    if (idx === -1) list.push(key);
+  } else {
+    if (idx !== -1) list.splice(idx, 1);
+  }
+  saveUserData();
+  refreshOtherViews();
+}
+
+function getMainStatut(activeAlertes) {
+  if (!activeAlertes.length) return { label: 'Normale', cls: 'badge-ok' };
+  var hasCrit = activeAlertes.some(function(a){ return a.severity === 'crit'; });
+  if (hasCrit) return { label: 'Critique', cls: 'badge-stop' };
+  return { label: 'Attention', cls: 'badge-slow' };
+}
+
+// Affiche soit les tags d'alertes actives, soit un badge vert "Normale"
+function renderAlertsCell(activeAlertes) {
+  if (!activeAlertes.length) {
+    return '<span class="alert-tag alert-tag-ok">✓ Normale</span>';
+  }
+  return '<div class="cell-alerts">' + activeAlertes.map(function(a) {
+    var cls = a.severity === 'crit' ? 'alert-tag-crit' : 'alert-tag-warn';
+    return '<span class="alert-tag ' + cls + '">⚠ ' + escHtml(a.message) + '</span>';
+  }).join('') + '</div>';
+}
+
+// ─── Calcul vitesse + ΔDensité initiale ──────────────────────────────────────
+function calcVitesse(mesures) {
+  var densInit = mesures.length ? mesures[0].densite : null;
+  return mesures.map(function(m, i) {
+    var deltaInit = (densInit !== null) ? parseFloat((densInit - m.densite).toFixed(4)) : null;
+    if (i === 0) return Object.assign({}, m, { vitesse: 0, deltaInit: 0 });
+    var prev  = mesures[i - 1];
+    var jours = (new Date(m.date) - new Date(prev.date)) / 86400000;
+    if (jours <= 0) return Object.assign({}, m, { vitesse: 0, deltaInit: deltaInit });
+    return Object.assign({}, m, { vitesse: (prev.densite - m.densite) / jours, deltaInit: deltaInit });
+  });
+}
+
+// ─── Cuves ────────────────────────────────────────────────────────────────────
+var SUFFIXES_DOUBLON = ['bis','ter','quater','quinquies','sexies','septies','octies'];
+
+function suggestUniqueName(base) {
+  var existing = cuves.map(function(c){ return c.nom.trim().toLowerCase(); });
+  if (existing.indexOf(base.trim().toLowerCase()) === -1) return base;
+  for (var i = 0; i < SUFFIXES_DOUBLON.length; i++) {
+    var candidate = base + ' ' + SUFFIXES_DOUBLON[i];
+    if (existing.indexOf(candidate.trim().toLowerCase()) === -1) return candidate;
+  }
+  // Fallback si tous les suffixes sont pris
+  var n = 2;
+  while (existing.indexOf((base + ' (' + n + ')').trim().toLowerCase()) !== -1) n++;
+  return base + ' (' + n + ')';
+}
+
+function addCuve() {
+  document.getElementById('nc-nom').value = '';
+  document.getElementById('nc-tap').value = '';
+  document.getElementById('nc-azote').value = '';
+  document.getElementById('nc-nom-suggestion').style.display = 'none';
+  loadGlobalLevures();
+  var levureSel = document.getElementById('nc-levure');
+  var opts = '<option value="">—</option>' + levures.map(function(l){
+    return '<option value="' + escHtml(l.nom) + '">' + escHtml(l.nom) + ' (besoin azote : ' + l.besoinAzote + ')</option>';
+  }).join('');
+  levureSel.innerHTML = opts;
+  document.getElementById('new-cuve-modal').style.display = 'flex';
+  setTimeout(function(){ document.getElementById('nc-nom').focus(); }, 80);
+}
+function closeNewCuveModal() {
+  document.getElementById('new-cuve-modal').style.display = 'none';
+}
+function confirmAddCuve() {
+  var nom = document.getElementById('nc-nom').value.trim();
+  if (!nom) { alert('Veuillez saisir un nom de cuve.'); return; }
+
+  // Vérifier les doublons et proposer un suffixe
+  var existing = cuves.map(function(c){ return c.nom.trim().toLowerCase(); });
+  if (existing.indexOf(nom.toLowerCase()) !== -1) {
+    var suggestion = suggestUniqueName(nom);
+    var sugEl = document.getElementById('nc-nom-suggestion');
+    sugEl.style.display = '';
+    sugEl.innerHTML = '⚠ Ce nom existe déjà. Nom suggéré : <strong>' + escHtml(suggestion) + '</strong> — '
+      + '<button class="btn btn-sm" style="padding:1px 6px;font-size:10px" onclick=\'document.getElementById("nc-nom").value=' + JSON.stringify(suggestion) + ';document.getElementById("nc-nom-suggestion").style.display="none"\'>Utiliser</button>';
+    return;
+  }
+
+  var tap   = document.getElementById('nc-tap').value;
+  var azote = document.getElementById('nc-azote').value;
+  var levureNom = document.getElementById('nc-levure').value;
+
+  // Sauvegarder les valeurs saisies dans la saisie rapide avant le re-render
+  var savedValues = {};
+  cuves.forEach(function(c, ci) {
+    var dEl = document.getElementById('sr-dens-' + ci);
+    var tEl = document.getElementById('sr-temp-' + ci);
+    if (dEl || tEl) savedValues[ci] = { dens: dEl ? dEl.value : '', temp: tEl ? tEl.value : '' };
+  });
+
+  cuves.push({
+    nom: nom, mesures: [], active: true,
+    appellation: '', couleur: '', qualite: '',
+    tap: tap !== '' && !isNaN(parseDecimal(tap)) ? parseDecimal(tap) : null,
+    azoteAssimilable: azote !== '' && !isNaN(parseDecimal(azote)) ? parseDecimal(azote) : null,
+    levure: levureNom || ''
+  });
+  saveUserData();
+  closeNewCuveModal();
+  renderSaisieRapide();
+  // Restaurer les valeurs
+  Object.keys(savedValues).forEach(function(ci) {
+    var dEl = document.getElementById('sr-dens-' + ci);
+    var tEl = document.getElementById('sr-temp-' + ci);
+    if (dEl) dEl.value = savedValues[ci].dens;
+    if (tEl) tEl.value = savedValues[ci].temp;
+  });
+  // Rafraîchir les autres vues sans toucher à la saisie rapide
+  renderDetail();
+  renderTableauResume();
+  
+  renderGraphiques();
+}
+function removeCuve(i) {
+  if (!confirm('Supprimer "' + cuves[i].nom + '" et toutes ses mesures ?')) return;
+  cuves.splice(i, 1);
+  if (activeGraphCuve >= cuves.length) activeGraphCuve = Math.max(0, cuves.length - 1);
+  if (activeTableCuve >= cuves.length) activeTableCuve = Math.max(0, cuves.length - 1);
+  saveUserData();
+  renderAll();
+}
+// Retire la cuve de la saisie rapide sans supprimer ses données
+function archiveCuve(i) {
+  cuves[i].archived = true;
+  // Date de fin = dernière mesure de la cuve (pas la date du jour)
+  var mesures = cuves[i].mesures || [];
+  cuves[i].dateArchive = mesures.length ? mesures[mesures.length-1].date : new Date().toISOString().slice(0,10);
+  saveUserData();
+  renderSaisieRapide();
+  renderDetail();
+  renderTableauResume();
+  renderGraphiques();
+}
+function archiveCuveDetail(i) {
+  var mesures = cuves[i].mesures || [];
+  cuves[i].archived = true;
+  cuves[i].dateArchive = mesures.length ? mesures[mesures.length-1].date : new Date().toISOString().slice(0,10);
+  saveUserData();
+  renderSaisieRapide();
+  renderDetail();
+  renderTableauResume();
+  renderGraphiques();
+  setTimeout(function(){
+    var el = document.getElementById('cuve-anchor-' + i);
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, 100);
+}
+function unarchiveCuve(i) {
+  cuves[i].archived = false;
+  delete cuves[i].dateArchive;
+  saveUserData();
+  renderAll();
+}
+function updateCuveInfo(ci, field, val) {
+  cuves[ci][field] = val;
+  saveUserData();
+  refreshOtherViews();
+}
+function onQualiteChange(ci, val) {
+  var wrap = document.getElementById('qualite-autre-wrap-' + ci);
+  if (val === 'Autre') {
+    wrap.style.display = '';
+    var inp = document.getElementById('qualite-autre-' + ci);
+    if (inp) { inp.value = ''; inp.focus(); }
+    cuves[ci].qualite = '';
+  } else {
+    wrap.style.display = 'none';
+    cuves[ci].qualite = val;
+  }
+  saveUserData();
+  refreshOtherViews();
+}
+function renameCuve(i, val) {
+  cuves[i].nom = val;
+  saveUserData();
+  refreshOtherViews();
+}
+function addMesure(ci) {
+  var date    = document.getElementById('inp-date-' + ci).value;
+  var densite = parseDecimal(document.getElementById('inp-dens-' + ci).value);
+  var temp    = parseDecimal(document.getElementById('inp-temp-' + ci).value);
+  if (!date || isNaN(densite) || isNaN(temp)) { alert('Remplissez tous les champs.'); return; }
+  cuves[ci].mesures.push({ date: date, densite: densite, temperature: temp });
+  cuves[ci].mesures.sort(function(a,b){ return a.date.localeCompare(b.date); });
+  saveUserData();
+  renderAll();
+}
+function removeMesureDate(ci, date) {
+  cuves[ci].mesures = cuves[ci].mesures.filter(function(m){ return m.date !== date; });
+  saveUserData();
+  renderAll();
+}
+function removeMesure(ci, mi) {
+  cuves[ci].mesures.splice(mi, 1);
+  saveUserData();
+  renderAll();
+}
+
+// ─── Saisie rapide ────────────────────────────────────────────────────────────
+function renderSaisieRapide() {
+  var today = new Date().toISOString().slice(0,10);
+  var dateEl = document.getElementById('saisie-date');
+  if (!dateEl.value) dateEl.value = today;
+
+  // Seulement les cuves non archivées, triées
+  var activeCuves = cuves.filter(function(c){ return !c.archived; });
+  var sorted = activeCuves.slice().sort(function(a,b){ return a.nom.localeCompare(b.nom, 'fr', {numeric:true}); });
+  var body = document.getElementById('saisie-rapide-body');
+  if (!body) return;
+
+  if (!activeCuves.length) {
+    body.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--c-muted)">Aucune cuve active. Cliquez sur <strong>+ Nouvelle cuve</strong>.</td></tr>';
+    return;
+  }
+
+  body.innerHTML = sorted.map(function(c) {
+    var ci = cuves.indexOf(c);
+    var date = document.getElementById('saisie-date').value || new Date().toISOString().slice(0,10);
+    var activeAl = evalAlertesCuve(c);
+    var alertHtml = renderAlertsCell(activeAl);
+    var hasMesureDate = c.mesures.some(function(m){ return m.date === date; });
+    var actionBtn = hasMesureDate
+      ? '<button class="btn btn-danger btn-sm" title="Supprimer la mesure du ' + date + '" onclick=\'removeMesureDate(' + ci + ',' + JSON.stringify(date) + ')\'>✕ ' + date + '</button>'
+      : '<button class="btn btn-sm" title="Terminer la fermentation — retirer de la saisie (données conservées)" onclick="archiveCuve(' + ci + ')" style="color:var(--c-amber-text);border-color:#e0a030">⏹ Terminer</button>';
+    return '<tr>'
+      + '<td class="cuve-name-cell">' + escHtml(c.nom) + '</td>'
+      + '<td><input type="text" inputmode="decimal" id="sr-dens-' + ci + '" placeholder="1,080" style="width:100px"></td>'
+      + '<td><input type="text" inputmode="decimal" id="sr-temp-' + ci + '" placeholder="20" style="width:80px"></td>'
+      + '<td>' + alertHtml + '</td>'
+      + '<td>' + actionBtn + '</td>'
+      + '</tr>';
+  }).join('')
+  + '<tr class="saisie-new-row">'
+  + '<td colspan="5"><button class="btn btn-sm" onclick="addCuve()" style="width:100%;border-style:dashed">+ Ajouter une cuve</button></td>'
+  + '</tr>';
+}
+
+function saveSaisieRapide() {
+  var date = document.getElementById('saisie-date').value;
+  if (!date) { alert('Sélectionnez une date.'); return; }
+  var count = 0;
+  cuves.forEach(function(c, ci) {
+    var densEl = document.getElementById('sr-dens-' + ci);
+    var tempEl = document.getElementById('sr-temp-' + ci);
+    if (!densEl || !tempEl) return;
+    var dens = parseDecimal(densEl.value);
+    var temp = parseDecimal(tempEl.value);
+    if (!isNaN(dens) && !isNaN(temp)) {
+      // Remove existing entry for same date
+      c.mesures = c.mesures.filter(function(m){ return m.date !== date; });
+      c.mesures.push({ date: date, densite: dens, temperature: temp });
+      c.mesures.sort(function(a,b){ return a.date.localeCompare(b.date); });
+      densEl.value = ''; tempEl.value = '';
+      count++;
+    }
+  });
+  saveUserData();
+  refreshOtherViews();
+  renderSaisieRapide();
+  var fb = document.getElementById('saisie-feedback');
+  fb.textContent = count + ' mesure(s) enregistrée(s) ✓';
+  setTimeout(function(){ fb.textContent=''; }, 3000);
+}
+
+// ─── Rendu : Détail cuves ─────────────────────────────────────────────────────
+function renderDetail() {
+  var el = document.getElementById('cuves-list');
+  var nc = document.getElementById('no-cuves');
+  var shortcuts = document.getElementById('detail-shortcuts');
+
+  // Boutons raccourcis de navigation avec état actif
+  if (shortcuts) {
+    if (!cuves.length) {
+      shortcuts.innerHTML = '';
+    } else {
+      shortcuts.innerHTML = getSortedCuves().map(function(c) {
+        var ci = cuves.indexOf(c);
+        var isArchived = !!c.archived;
+        var isActive = (ci === activeDetailCuve);
+        return '<a href="#cuve-anchor-' + ci + '" style="text-decoration:none" onclick="setDetailCuve(' + ci + ')">'
+          + '<button class="cuve-tab' + (isActive ? ' active' : '') + '" style="'
+          + (isArchived ? 'color:var(--c-muted);border-color:var(--c-border);background:var(--c-surface);opacity:0.6' : '')
+          + '">' + escHtml(c.nom) + (isArchived ? ' ⏹' : '') + '</button>'
+          + '</a>';
+      }).join('');
+    }
+  }
+
+  if (!cuves.length) { nc.style.display = ''; el.innerHTML = ''; return; }
+  nc.style.display = 'none';
+  var today = new Date().toISOString().slice(0,10);
+
+  el.innerHTML = getSortedCuves().map(function(c) {
+    var ci = cuves.indexOf(c);
+    var calc = calcVitesse(c.mesures);
+    var last = calc.length ? calc[calc.length - 1] : null;
+    var activeAl = (last && !c.archived) ? evalAlertesCuve(c) : [];
+    var st = getMainStatut(activeAl);
+    var vits = calc.filter(function(m, i){ return i > 0; });
+    var maxV = vits.length ? vits.reduce(function(mx,m){ return m.vitesse>mx?m.vitesse:mx; }, 0) : null;
+    var allAl = (last && !c.archived) ? evalAlertesCuveAll(c) : [];
+
+    var lastMi = calc.length - 1;
+    var rows = calc.map(function(m, mi) {
+      var isLastRow = (mi === lastMi);
+      var alertCell;
+
+      if (isLastRow) {
+        // Dernière ligne : case à cocher, toujours décochée par défaut, vert seulement si déjà cochée pour ce jour
+        if (allAl.length) {
+          alertCell = '<div class="cell-alerts">'
+            + allAl.map(function(a) {
+                var safeId = String(a.id).replace(/'/g, '');
+                if (a.acquittee) {
+                  return '<label style="display:flex;align-items:center;gap:5px;cursor:pointer;margin-bottom:2px">'
+                    + '<input type="checkbox" checked onchange="toggleAlerteAcquittement(' + ci + ',\'' + safeId + '\',this.checked)" style="width:13px;height:13px;cursor:pointer;flex-shrink:0">'
+                    + '<span class="alert-tag alert-tag-ok"><span style="text-decoration:line-through">✓ ' + escHtml(a.message) + '</span><span style="font-weight:700">Travail fait</span></span>'
+                    + '</label>';
+                } else {
+                  var tagCls = a.severity === 'crit' ? 'alert-tag-crit' : 'alert-tag-warn';
+                  return '<label style="display:flex;align-items:center;gap:5px;cursor:pointer;margin-bottom:2px">'
+                    + '<input type="checkbox" onchange="toggleAlerteAcquittement(' + ci + ',\'' + safeId + '\',this.checked)" style="width:13px;height:13px;cursor:pointer;flex-shrink:0">'
+                    + '<span class="alert-tag ' + tagCls + '">⚠ ' + escHtml(a.message) + '</span>'
+                    + '</label>';
+                }
+              }).join('')
+            + '</div>';
+        } else {
+          alertCell = '<span class="alert-tag alert-tag-ok">✓ Normale</span>';
+        }
+      } else {
+        // Lignes historiques : alertes qui étaient déclenchées À CETTE DATE PRÉCISE
+        var cPartial = { mesures: c.mesures.slice(0, mi+1), couleur: c.couleur, tap: c.tap, azoteAssimilable: c.azoteAssimilable, levure: c.levure };
+        var triggeredThisDay = computeTriggeredAlertes(cPartial);
+        var visibleThisDay = triggeredThisDay.filter(function(a) {
+          var alerteDef = alertes.find(function(al){ return String(al.id) === String(a.id); });
+          var isReactivable = !alerteDef || alerteDef.reactivable !== false;
+          if (!isReactivable) {
+            // Non réactivable : n'afficher que sur la ligne où elle a été validée (peu importe sa date réelle de 1ère apparition)
+            // Si jamais validée, on l'affiche en orange normalement (à traiter)
+            var list = getValideesList(c);
+            var prefix = String(a.id) + '@';
+            var validatedKey = list.find(function(k){ return k.indexOf(prefix) === 0; });
+            if (validatedKey) {
+              var validatedDate = validatedKey.slice(prefix.length);
+              // N'afficher cette alerte que sur LA ligne exacte de sa validation ; masquer partout ailleurs
+              return validatedDate === m.date;
+            }
+            return true; // jamais validée : afficher normalement
+          }
+          return true; // réactivable : toujours afficher (vert si validée ce jour, orange sinon)
+        });
+        if (visibleThisDay.length) {
+          alertCell = '<div class="cell-alerts">'
+            + visibleThisDay.map(function(a) {
+                var wasValidatedThisDay = isOccurrenceValidated(c, a.id, m.date);
+                if (wasValidatedThisDay) {
+                  return '<span class="alert-tag alert-tag-ok"><span style="text-decoration:line-through">✓ ' + escHtml(a.message) + '</span><span style="font-weight:700">Travail fait</span></span>';
+                } else {
+                  var tagCls = a.severity === 'crit' ? 'alert-tag-crit' : 'alert-tag-warn';
+                  return '<span class="alert-tag ' + tagCls + '">⚠ ' + escHtml(a.message) + '</span>';
+                }
+              }).join('')
+            + '</div>';
+        } else {
+          alertCell = '<span class="alert-tag alert-tag-ok">✓ Normale</span>';
+        }
+      }
+
+      return '<tr' + (isLastRow ? ' style="background:var(--c-surface)"' : '') + '>'
+        + '<td>' + m.date + (isLastRow ? ' <span style="font-size:10px;color:var(--c-muted)">(dernière)</span>' : '') + '</td>'
+        + '<td>' + m.densite + ' <span style="font-size:10px;color:var(--c-muted)">g/cm³</span></td>'
+        + '<td>' + m.temperature + '°C</td>'
+        + '<td>' + (m.deltaInit !== undefined ? fmtDecimal(m.deltaInit, 3) : '—') + '</td>'
+        + '<td>' + (m.vitesse !== null ? fmtDecimal(m.vitesse, 3) : '—') + '</td>'
+        + '<td>' + alertCell + '</td>'
+        + '<td><button class="btn btn-danger btn-sm" onclick="removeMesure(' + ci + ',' + mi + ')">✕</button></td>'
+        + '</tr>';
+    }).join('');
+
+    var qualiteOpts = ['', 'BIO', 'HVE', 'Autre'].map(function(opt) {
+      var isAutre = (c.qualite && ['BIO','HVE',''].indexOf(c.qualite) === -1);
+      var sel = (opt === c.qualite) || (opt === 'Autre' && isAutre);
+      return '<option value="' + opt + '"' + (sel ? ' selected' : '') + '>' + (opt || '—') + '</option>';
+    }).join('');
+    var qualiteIsAutre = c.qualite && ['BIO','HVE',''].indexOf(c.qualite) === -1;
+    var couleurOpts = ['', 'Blanc', 'Rosé', 'Rouge'].map(function(opt) {
+      return '<option value="' + opt + '"' + (opt === c.couleur ? ' selected' : '') + '>' + (opt || '—') + '</option>';
+    }).join('');
+
+    loadGlobalLevures();
+    var levureOpts = ['<option value="">—</option>'].concat(levures.map(function(l){
+      return '<option value="' + escHtml(l.nom) + '"' + (l.nom===c.levure?' selected':'') + '>' + escHtml(l.nom) + ' (besoin azote : ' + l.besoinAzote + ')</option>';
+    })).join('');
+
+    var infoBlock = '<div class="grid-2" style="margin-bottom:14px;gap:10px">'
+      + '<div><label>Appellation</label><input type="text" value="' + escHtml(c.appellation || '') + '" placeholder="ex : Côtes de Provence" onchange="updateCuveInfo(' + ci + ',\'appellation\',this.value)"></div>'
+      + '<div><label>Couleur</label><select onchange="updateCuveInfo(' + ci + ',\'couleur\',this.value)">' + couleurOpts + '</select></div>'
+      + '<div><label>Qualité</label><select id="qualite-sel-' + ci + '" onchange="onQualiteChange(' + ci + ',this.value)">' + qualiteOpts + '</select></div>'
+      + '<div id="qualite-autre-wrap-' + ci + '" style="display:' + (qualiteIsAutre ? '' : 'none') + '">'
+      +   '<label>Précision qualité</label><input type="text" id="qualite-autre-' + ci + '" value="' + escHtml(qualiteIsAutre ? c.qualite : '') + '" placeholder="ex : Terra Vitis" onchange="updateCuveInfo(' + ci + ',\'qualite\',this.value)">'
+      + '</div>'
+      + '<div><label>TAP (% vol.)</label><input type="text" inputmode="decimal" value="' + (c.tap !== null && c.tap !== undefined ? fmtDecimal(c.tap) : '') + '" placeholder="ex : 13,5" onchange="updateCuveInfo(' + ci + ',\'tap\',this.value===\'\'?null:parseDecimal(this.value))"></div>'
+      + '<div><label>Azote assimilable (mg/L)</label><input type="text" inputmode="decimal" value="' + (c.azoteAssimilable !== null && c.azoteAssimilable !== undefined ? fmtDecimal(c.azoteAssimilable) : '') + '" placeholder="ex : 180" onchange="updateCuveInfo(' + ci + ',\'azoteAssimilable\',this.value===\'\'?null:parseDecimal(this.value))"></div>'
+      + '<div><label>Levure utilisée</label><select onchange="updateCuveInfo(' + ci + ',\'levure\',this.value)">' + levureOpts + '</select></div>'
+      + '</div>';
+
+    loadGlobalVariables();
+    var computedVars = variablesCalculees.length ? computeVariablesForCuve(c) : {};
+    var visibleVariables = variablesCalculees.filter(function(v){ return v.visible !== false; });
+    var varsBlock = visibleVariables.length
+      ? '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">'
+        + visibleVariables.map(function(v) {
+            var val = computedVars[v.nom];
+            var displayVal = (val !== null && val !== undefined) ? fmtDecimal(val, 2) : '—';
+            return '<div class="metric" style="flex:1;min-width:140px">'
+              + '<div class="metric-label">' + escHtml(v.nom) + '</div>'
+              + '<div class="metric-value">' + displayVal + '<span class="metric-unit">' + escHtml(v.unite || '') + '</span></div>'
+              + '</div>';
+          }).join('')
+        + '</div>'
+      : '';
+
+    // Durée de fermentation
+    var fermentDuration = null;
+    if (calc.length >= 2) {
+      var dateDebut = new Date(calc[0].date);
+      var dateFin   = c.archived && c.dateArchive ? new Date(c.dateArchive) : new Date(calc[calc.length-1].date);
+      fermentDuration = Math.round((dateFin - dateDebut) / 86400000);
+    }
+
+    return '<div class="card" id="cuve-anchor-' + ci + '">'
+      + '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px">'
+      +   '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">'
+      +     '<input class="cuve-name-input" value="' + escHtml(c.nom) + '" onchange="renameCuve(' + ci + ',this.value)">'
+      +     (last ? '<span class="badge ' + st.cls + '">' + st.label + '</span>' : '')
+      +     (maxV !== null ? '<span class="badge badge-fast" title="Vitesse maximale atteinte">⚡ Max : ' + fmtDecimal(maxV, 3) + ' ΔDensité/j</span>' : '')
+      +     (fermentDuration !== null ? '<span class="badge badge-ok" title="Durée de fermentation">⏱ ' + fermentDuration + ' j</span>' : '')
+      +     (c.archived ? '<span class="badge" style="background:#eee;color:#888">Terminée</span>' : '')
+      +   '</div>'
+      +   '<div style="display:flex;gap:8px;flex-wrap:wrap">'
+      +     '<button class="btn btn-sm" onclick="exportCuveCSV(' + ci + ')">⬇ CSV</button>'
+      +     (c.archived
+          ? '<button class="btn btn-sm" onclick="unarchiveCuve(' + ci + ')" style="color:var(--c-green-text);border-color:var(--c-green)">↩ Réactiver</button>'
+          : '<button class="btn btn-sm" onclick="archiveCuveDetail(' + ci + ')" style="color:var(--c-amber-text);border-color:#e0a030">⏹ Terminer</button>')
+      +     '<button class="btn btn-danger btn-sm" onclick="removeCuve(' + ci + ')">🗑</button>'
+      +   '</div>'
+      + '</div>'
+      + infoBlock
+      + varsBlock
+      + '<div class="card-title">Ajouter une mesure</div>'
+      + '<div class="flex-row" style="margin-bottom:14px">'
+      +   '<div><label>Date</label><input type="date" id="inp-date-' + ci + '" value="' + today + '"></div>'
+      +   '<div><label>Densité (g/cm³)</label><input type="text" inputmode="decimal" id="inp-dens-' + ci + '" placeholder="1,080"></div>'
+      +   '<div><label>Température (°C)</label><input type="text" inputmode="decimal" id="inp-temp-' + ci + '" placeholder="20"></div>'
+      +   '<div style="flex:0"><button class="btn btn-primary" style="margin-top:18px" onclick="addMesure(' + ci + ')">+ Ajouter</button></div>'
+      + '</div>'
+      + (calc.length
+          ? '<div class="table-wrap"><table class="table"><thead><tr>'
+            + '<th>Date</th><th>Densité (g/cm³)</th><th>Temp.</th><th>ΔDensité initiale</th><th>ΔDensité/j</th><th>Alertes</th><th></th>'
+            + '</tr></thead><tbody>' + rows + '</tbody></table></div>'
+          : '<p style="font-size:13px;color:var(--c-muted)">Aucune mesure saisie.</p>')
+      + '</div>';
+  }).join('');
+}
+
+// ─── Rendu : Tableaux ─────────────────────────────────────────────────────────
+function renderTableauResume() {
+  var body    = document.getElementById('table-resume-body');
+  var bandeau = document.getElementById('alertes-bandeau');
+  if (!body) return;
+  var allAlerts = [];
+
+  // Cuves actives (non archivées) ayant au moins une mesure
+  var cuvesActives = getSortedCuves().filter(function(c){ return !c.archived && c.mesures.length; });
+
+  // Détermine la date la plus récente parmi toutes les dernières mesures
+  var dateMax = cuvesActives.reduce(function(max, c) {
+    var lastDate = c.mesures[c.mesures.length - 1].date;
+    return (!max || lastDate > max) ? lastDate : max;
+  }, null);
+
+  // Ne garde que les cuves dont la dernière mesure correspond à cette date
+  var cuvesAJour = cuvesActives.filter(function(c) {
+    return c.mesures[c.mesures.length - 1].date === dateMax;
+  });
+
+  var subtitleEl = document.getElementById('table-resume-subtitle');
+  if (subtitleEl) {
+    var nbArchivees = cuves.filter(function(c){ return c.archived; }).length;
+    var nbDecalees = cuvesActives.length - cuvesAJour.length;
+    var parts = [];
+    if (dateMax) parts.push('Mesures du ' + dateMax);
+    if (nbDecalees > 0) parts.push(nbDecalees + ' cuve(s) non à jour masquée(s)');
+    if (nbArchivees > 0) parts.push(nbArchivees + ' cuve(s) terminée(s) masquée(s)');
+    subtitleEl.textContent = parts.join(' · ');
+  }
+
+  body.innerHTML = cuvesAJour.map(function(c) {
+    var ci = cuves.indexOf(c);
+    var calc = calcVitesse(c.mesures);
+    var last = calc.length ? calc[calc.length - 1] : null;
+    if (!last) return '<tr><td>' + escHtml(c.nom) + '</td><td colspan="8" style="color:var(--c-muted)">Aucune donnée</td></tr>';
+    var activeAl = evalAlertesCuve(c); // non acquittées, pour le bandeau global
+    var allAl    = evalAlertesCuveAll(c); // toutes (acquittées incluses), pour l'affichage + cases à cocher
+    if (activeAl.length) activeAl.forEach(function(a){ allAlerts.push({ nom: c.nom, alerte: a }); });
+    var vits = calc.filter(function(m, i){ return i > 0; });
+    var lastV = vits.length ? vits[vits.length-1] : null;
+    var maxV  = vits.length ? vits.reduce(function(mx,m){ return m.vitesse>mx?m.vitesse:mx; }, 0) : null;
+
+    var checkboxesHtml = allAl.length
+      ? allAl.map(function(a) {
+          return '<label style="display:flex;align-items:center;gap:5px;font-size:11px;white-space:nowrap;margin-bottom:3px;cursor:pointer">'
+            + '<input type="checkbox" ' + (a.acquittee ? 'checked' : '') + ' onchange="toggleAlerteAcquittement(' + ci + ',\'' + String(a.id).replace(/'/g,'') + '\',this.checked)" style="width:14px;height:14px;cursor:pointer;flex-shrink:0">'
+            + '<span style="' + (a.acquittee ? 'text-decoration:line-through;color:var(--c-muted)' : '') + '">' + escHtml(a.message) + '</span>'
+            + '</label>';
+        }).join('')
+      : '<span style="color:var(--c-muted);font-size:11px">—</span>';
+
+    return '<tr>'
+      + '<td style="font-weight:600">' + escHtml(c.nom) + '</td>'
+      + '<td>' + last.date + '</td>'
+      + '<td>' + last.densite + '</td>'
+      + '<td>' + last.temperature + '°C</td>'
+      + '<td>' + (last.deltaInit !== undefined ? fmtDecimal(last.deltaInit, 3) : '—') + '</td>'
+      + '<td>' + (lastV ? fmtDecimal(lastV.vitesse, 3) : '—') + '</td>'
+      + '<td>' + (maxV !== null ? fmtDecimal(maxV, 3) : '—') + '</td>'
+      + '<td>' + renderAlertsCell(activeAl) + '</td>'
+      + '<td>' + checkboxesHtml + '</td>'
+      + '</tr>';
+  }).join('') || '<tr><td colspan="9" style="text-align:center;padding:20px;color:var(--c-muted)">Aucune cuve à jour</td></tr>';
+
+  if (bandeau) {
+    bandeau.innerHTML = allAlerts.map(function(item){
+      var cls = item.alerte.severity === 'crit' ? 'alert-crit' : 'alert-warn';
+      return '<div class="alert-banner ' + cls + '">⚠ <strong>' + escHtml(item.nom) + '</strong> — ' + escHtml(item.alerte.message) + '</div>';
+    }).join('');
+  }
+}
+
+// Retourne les cuves filtrées exactement comme le tableau "Dernières mesures"
+function getExportCuves() {
+  var actives = getSortedCuves().filter(function(c){ return !c.archived && c.mesures.length; });
+  if (!actives.length) return [];
+  var dateMax = actives.reduce(function(max, c) {
+    var d = c.mesures[c.mesures.length - 1].date;
+    return (!max || d > max) ? d : max;
+  }, null);
+  return actives.filter(function(c) {
+    return c.mesures[c.mesures.length - 1].date === dateMax;
+  });
+}
+
+function exportCSV() {
+  var cuvesExport = getExportCuves();
+  if (!cuvesExport.length) { alert('Aucune cuve active à exporter.'); return; }
+  var rows = [['Cuve','Appellation','Couleur','Qualité','Dernière date','Densité (g/cm3)','Température (°C)','ΔDensité initiale','ΔDensité/jour','ΔDensité/jour max','Alertes']];
+  cuvesExport.forEach(function(c) {
+    var calc  = calcVitesse(c.mesures);
+    var last  = calc.length ? calc[calc.length - 1] : null;
+    if (!last) return;
+    var activeAl = evalAlertesCuve(c);
+    var vits = calc.filter(function(m, i){ return i > 0; });
+    var lastV = vits.length ? vits[vits.length-1] : null;
+    var maxV  = vits.length ? vits.reduce(function(mx,m){ return m.vitesse>mx?m.vitesse:mx; }, 0) : null;
+    var alertMessages = activeAl.length ? activeAl.map(function(a){ return a.message; }).join(' | ') : 'Normale';
+    rows.push([
+      c.nom, c.appellation||'', c.couleur||'', c.qualite||'',
+      last.date,
+      fmtDecimal(last.densite, 3),
+      fmtDecimal(last.temperature, 1),
+      last.deltaInit !== undefined ? fmtDecimal(last.deltaInit, 3) : '',
+      lastV ? fmtDecimal(lastV.vitesse, 3) : '',
+      maxV !== null ? fmtDecimal(maxV, 3) : '',
+      alertMessages
+    ]);
+  });
+  var csv = rows.map(function(r){
+    return r.map(function(cell){
+      var s = String(cell).replace(/"/g,'""');
+      return s.indexOf(';') !== -1 || s.indexOf('"') !== -1 || s.indexOf('\n') !== -1 ? '"' + s + '"' : s;
+    }).join(';');
+  }).join('\r\n');
+  var blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+  var url  = URL.createObjectURL(blob);
+  var a    = document.createElement('a');
+  a.href = url; a.download = 'fermentation_resume_' + new Date().toISOString().slice(0,10) + '.csv';
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a); URL.revokeObjectURL(url);
+}
+
+function exportPDF() {
+  if (!window.jspdf) { alert('La bibliothèque PDF n\'a pas pu se charger. Vérifiez votre connexion internet.'); return; }
+  var cuvesExport = getExportCuves();
+  if (!cuvesExport.length) { alert('Aucune cuve active à exporter.'); return; }
+
+  var doc = new window.jspdf.jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+
+  doc.setFontSize(14);
+  doc.text('Suivi de fermentation — Dernières mesures par cuve', 14, 14);
+  doc.setFontSize(9);
+  doc.setTextColor(120);
+  var subtitle = (currentUser ? 'Compte : ' + currentUser + ' — ' : '') + 'Généré le ' + new Date().toLocaleDateString('fr-FR');
+  doc.text(subtitle, 14, 20);
+  doc.setTextColor(0);
+
+  var head = [['Cuve','Appellation','Couleur','Date','Densité','Temp.','ΔDens. init.','ΔDens./j','ΔDens./j max','Alertes actives']];
+  var body = [];
+
+  cuvesExport.forEach(function(c) {
+    var calc = calcVitesse(c.mesures);
+    var last = calc.length ? calc[calc.length - 1] : null;
+    if (!last) return;
+    var activeAl = evalAlertesCuve(c);
+    var vits = calc.filter(function(m, i){ return i > 0; });
+    var lastV = vits.length ? vits[vits.length-1] : null;
+    var maxV  = vits.length ? vits.reduce(function(mx,m){ return m.vitesse>mx?m.vitesse:mx; }, 0) : null;
+    // Pour les alertes : case à cocher + message (☐ symbole)
+    var alertCell = activeAl.length
+      ? activeAl.map(function(a){ return '[ ] ' + a.message; }).join('\n')
+      : 'OK Normale';
+    body.push([
+      c.nom, c.appellation || '—', c.couleur || '—', last.date,
+      fmtDecimal(last.densite, 3),
+      fmtDecimal(last.temperature, 1) + '°C',
+      last.deltaInit !== undefined ? fmtDecimal(last.deltaInit, 3) : '—',
+      lastV ? fmtDecimal(lastV.vitesse, 3) : '—',
+      maxV !== null ? fmtDecimal(maxV, 3) : '—',
+      alertCell
+    ]);
+  });
+
+  doc.autoTable({
+    head: head,
+    body: body,
+    startY: 26,
+    styles: { fontSize: 8, cellPadding: 3, overflow: 'linebreak', valign: 'top' },
+    headStyles: { fillColor: [60, 90, 46], textColor: 255, fontStyle: 'bold', valign: 'middle' },
+    alternateRowStyles: { fillColor: [245, 245, 245] },
+    columnStyles: {
+      0: { cellWidth: 24 },
+      1: { cellWidth: 24 },
+      2: { cellWidth: 16 },
+      3: { cellWidth: 20 },
+      4: { cellWidth: 18 },
+      5: { cellWidth: 14 },
+      6: { cellWidth: 20 },
+      7: { cellWidth: 18 },
+      8: { cellWidth: 20 },
+      9: { cellWidth: 'auto', overflow: 'linebreak' }
+    },
+    tableWidth: 'auto',
+    didParseCell: function(data) {
+      if (data.section === 'body' && data.column.index === 9) {
+        var text = String(data.cell.raw || '');
+        if (text.indexOf('OK Normale') !== -1) {
+          data.cell.styles.textColor = [59, 109, 17];
+          data.cell.styles.fontStyle = 'bold';
+        } else {
+          data.cell.styles.textColor = [133, 79, 11];
+        }
+      }
+    }
+  });
+
+  doc.save('fermentation_resume_' + new Date().toISOString().slice(0,10) + '.pdf');
+}
+
+
+
+function exportCuveCSV(ci) {
+  var c = cuves[ci];
+  if (!c) return;
+  var calc = calcVitesse(c.mesures);
+  var rows = [['Date','Densité (g/cm3)','Température (°C)','ΔDensité initiale','ΔDensité/jour','Alertes']];
+  calc.forEach(function(m, mi) {
+    var als = evalAlertesCuve({ mesures: c.mesures.slice(0, mi+1), couleur: c.couleur, tap: c.tap, azoteAssimilable: c.azoteAssimilable, levure: c.levure });
+    var alertMessages = als.length ? als.map(function(a){ return a.message; }).join(' | ') : 'Normale';
+    rows.push([
+      m.date,
+      fmtDecimal(m.densite, 3),
+      fmtDecimal(m.temperature, 1),
+      m.deltaInit !== undefined ? fmtDecimal(m.deltaInit, 3) : '',
+      m.vitesse !== null ? fmtDecimal(m.vitesse, 3) : '',
+      alertMessages
+    ]);
+  });
+  var csv2 = rows.map(function(r){
+    return r.map(function(cell){
+      var s = String(cell).replace(/"/g,'""');
+      return s.indexOf(';') !== -1 || s.indexOf('"') !== -1 || s.indexOf('\n') !== -1 ? '"' + s + '"' : s;
+    }).join(';');
+  }).join('\r\n');
+  var blob2 = new Blob(['\uFEFF' + csv2], { type: 'text/csv;charset=utf-8;' });
+  var url2  = URL.createObjectURL(blob2);
+  var a2    = document.createElement('a');
+  a2.href   = url2;
+  var safeName = c.nom.replace(/[^a-z0-9_\-]+/gi, '_');
+  a2.download = 'fermentation_' + safeName + '_' + new Date().toISOString().slice(0,10) + '.csv';
+  document.body.appendChild(a2);
+  a2.click();
+  document.body.removeChild(a2);
+  URL.revokeObjectURL(url2);
+}
+
+function exportAllCuvesCSV() {
+  if (!cuves.length) { alert('Aucune cuve à exporter.'); return; }
+  var csvRows = [];
+  var dateExport = new Date().toISOString().slice(0,10);
+
+  // En-tête global
+  csvRows.push(['Export Suivi Fermentation', currentUser || '', dateExport]);
+  csvRows.push([]); // ligne vide
+
+  getSortedCuves().forEach(function(c) {
+    var calc = calcVitesse(c.mesures);
+
+    // Bloc identité de la cuve
+    csvRows.push(['=== ' + c.nom + ' ===',
+      c.appellation || '',
+      c.couleur || '',
+      c.qualite || '',
+      c.archived ? 'Terminée' : 'En cours',
+      c.tap !== null && c.tap !== undefined ? 'TAP : ' + fmtDecimal(c.tap, 1) + ' %vol' : '',
+      c.azoteAssimilable !== null && c.azoteAssimilable !== undefined ? 'Azote : ' + c.azoteAssimilable + ' mg/L' : '',
+      c.levure ? 'Levure : ' + c.levure : ''
+    ]);
+
+    // Durée si disponible
+    if (calc.length >= 2) {
+      var dateDebut = new Date(calc[0].date);
+      var dateFin   = c.archived && c.dateArchive ? new Date(c.dateArchive) : new Date(calc[calc.length-1].date);
+      var duree = Math.round((dateFin - dateDebut) / 86400000);
+      csvRows.push(['Durée FA', duree + ' jours', 'Du ' + calc[0].date, 'Au ' + (c.archived && c.dateArchive ? c.dateArchive : calc[calc.length-1].date)]);
+    }
+
+    // En-têtes colonnes mesures
+    csvRows.push(['Date', 'Densité (g/cm3)', 'Température (°C)', 'ΔDensité initiale', 'ΔDensité/jour', 'Alertes', 'Travail fait']);
+
+    // Mesures
+    calc.forEach(function(m, mi) {
+      var als = evalAlertesCuve({ mesures: c.mesures.slice(0, mi+1), couleur: c.couleur, tap: c.tap, azoteAssimilable: c.azoteAssimilable, levure: c.levure });
+      var alertMessages = als.length ? als.map(function(a){ return a.message; }).join(' | ') : 'Normale';
+      // Travaux faits ce jour
+      var travauxFaits = [];
+      var triggered = computeTriggeredAlertes({ mesures: c.mesures.slice(0, mi+1), couleur: c.couleur, tap: c.tap, azoteAssimilable: c.azoteAssimilable, levure: c.levure });
+      triggered.forEach(function(a) {
+        if (isOccurrenceValidated(c, a.id, m.date)) travauxFaits.push(a.message);
+      });
+      csvRows.push([
+        m.date,
+        fmtDecimal(m.densite, 3),
+        fmtDecimal(m.temperature, 1),
+        m.deltaInit !== undefined ? fmtDecimal(m.deltaInit, 3) : '',
+        m.vitesse !== null ? fmtDecimal(m.vitesse, 3) : '',
+        alertMessages,
+        travauxFaits.join(' | ')
+      ]);
+    });
+
+    csvRows.push([]); // ligne vide entre cuves
+  });
+
+  var csv = csvRows.map(function(r){
+    return r.map(function(cell){
+      var s = String(cell === undefined || cell === null ? '' : cell).replace(/"/g,'""');
+      return s.indexOf(';') !== -1 || s.indexOf('"') !== -1 || s.indexOf('\n') !== -1 ? '"' + s + '"' : s;
+    }).join(';');
+  }).join('\r\n');
+
+  var blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+  var url  = URL.createObjectURL(blob);
+  var a    = document.createElement('a');
+  a.href   = url;
+  a.download = 'fermentation_toutes_cuves_' + dateExport + '.csv';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function setTableCuve(i) { activeTableCuve = i; }
+
+// ─── Rendu : Graphiques ───────────────────────────────────────────────────────
+function renderGraphiques() {
+  buildCuveTabs('cuve-tabs-graph', activeGraphCuve, 'setGraphCuve');
+  var metricsEl = document.getElementById('graph-metrics');
+  var alertsEl  = document.getElementById('alertes-graph');
+  if (!metricsEl) return;
+  if (!cuves.length) { metricsEl.innerHTML = ''; if(alertsEl) alertsEl.innerHTML = ''; var tEl = document.getElementById('vitesse-travaux-faits'); if (tEl) tEl.innerHTML = ''; drawCharts([], [], [], '#3c5a2e', [], []); return; }
+
+  var c    = cuves[activeGraphCuve] || cuves[0];
+  var calc = calcVitesse(c.mesures);
+  var last = calc.length ? calc[calc.length-1] : null;
+  var vits = calc.filter(function(m, i){ return i > 0; });
+  var lastV = vits.length ? vits[vits.length-1] : null;
+  var maxV  = vits.reduce(function(mx,m){ return m.vitesse>mx?m.vitesse:mx; }, 0);
+  var avgT  = calc.length ? fmtDecimal(calc.reduce(function(s,m){ return s+m.temperature; }, 0)/calc.length, 1) : '—';
+
+  var activeAl = last ? evalAlertesCuve(c) : [];
+  var st = getMainStatut(activeAl);
+
+  // Durée de fermentation
+  var fermentDays = null;
+  if (calc.length >= 2) {
+    var dateDebut = new Date(calc[0].date);
+    var dateFin   = c.archived && c.dateArchive ? new Date(c.dateArchive) : new Date(calc[calc.length-1].date);
+    fermentDays = Math.round((dateFin - dateDebut) / 86400000);
+  }
+
+  metricsEl.innerHTML =
+    metric('Densité actuelle', last ? last.densite : '—', 'g/cm³') +
+    metric('ΔDensité initiale', (last && last.deltaInit !== undefined) ? fmtDecimal(last.deltaInit, 3) : '—', 'g/cm³') +
+    metric('ΔDensité/j (dernière)', lastV ? fmtDecimal(lastV.vitesse, 3) : '—', '') +
+    metric('ΔDensité/j (max)', vits.length ? fmtDecimal(maxV, 3) : '—', '') +
+    metric('Durée fermentation', fermentDays !== null ? fermentDays : '—', 'j') +
+    metric('Temp. moyenne', avgT, '°C');
+
+  if (alertsEl) {
+    alertsEl.innerHTML = activeAl.map(function(a) {
+      var cls = a.severity === 'crit' ? 'alert-crit' : 'alert-warn';
+      return '<div class="alert-banner ' + cls + '">⚠ <strong>' + escHtml(c.nom) + '</strong> — ' + escHtml(a.message) + '</div>';
+    }).join('');
+  }
+
+  var color  = PALETTE[activeGraphCuve % PALETTE.length];
+  var labels = calc.map(function(m){ return m.date; });
+  var vData  = calc.map(function(m){ return parseFloat(m.vitesse.toFixed(4)); });
+  var tData  = calc.map(function(m){ return m.temperature; });
+
+  // Lignes de seuil : alertes à une seule condition simple sur vitesse ou température
+  var vitesseThresholds = [];
+  var tempThresholds = [];
+  alertes.forEach(function(a) {
+    var conds = getAlerteConditions(a);
+    if (conds.length !== 1) return;
+    var cond = conds[0];
+    if (cond.operateur !== 'lt' && cond.operateur !== 'gt' && cond.operateur !== 'lte' && cond.operateur !== 'gte') return;
+    if (cond.champ === 'vitesse') vitesseThresholds.push({ nom: a.nom, seuil: cond.valeur, severity: a.severity });
+    if (cond.champ === 'temp')    tempThresholds.push({ nom: a.nom, seuil: cond.valeur, severity: a.severity });
+  });
+
+  // Calcul des travaux faits (alertes validées) pour les annoter sur le graphique
+  var travaux = [];
+  calc.forEach(function(m, mi) {
+    var cPartial = { mesures: c.mesures.slice(0, mi+1), couleur: c.couleur, tap: c.tap, azoteAssimilable: c.azoteAssimilable, levure: c.levure };
+    var triggeredThisDay = computeTriggeredAlertes(cPartial);
+    triggeredThisDay.forEach(function(a) {
+      if (isOccurrenceValidated(c, a.id, m.date)) {
+        travaux.push({ date: m.date, message: a.message });
+      }
+    });
+  });
+
+  drawCharts(labels, vData, tData, color, vitesseThresholds, tempThresholds, travaux);
+
+  // La frise est maintenant superposée sur le graphique — vider le conteneur externe
+  var travauxEl = document.getElementById('vitesse-travaux-faits');
+  if (travauxEl) travauxEl.innerHTML = '';
+}
+
+function metric(label, val, unit) {
+  return '<div class="metric"><div class="metric-label">' + label + '</div>'
+    + '<div class="metric-value">' + val + '<span class="metric-unit">' + unit + '</span></div></div>';
+}
+function setGraphCuve(i) { activeGraphCuve = i; renderGraphiques(); }
+
+function drawCharts(labels, vitesses, temps, color, vitesseThresholds, tempThresholds, travaux) {
+  if (chartVitesse) { chartVitesse.destroy(); chartVitesse = null; }
+  if (chartTemp)    { chartTemp.destroy();    chartTemp    = null; }
+  var cv = document.getElementById('chart-vitesse');
+  var ct = document.getElementById('chart-temp');
+  if (!cv || !ct) return;
+
+  var threshColors = { warn: '#e09f3e', crit: '#c0392b', info: '#2980b9' };
+  travaux = travaux || [];
+
+  // Plugin : badges sous l'axe X, empilés verticalement si même date
+  var travauxPlugin = {
+    id: 'travauxAnnotations',
+    afterDraw: function(chart) {
+      if (!travaux.length) return;
+      var ctx         = chart.ctx;
+      var xAxis       = chart.scales.x;
+      var yAxis       = chart.scales.y;
+      var top         = yAxis.top;
+      var bottom      = yAxis.bottom;
+      var chartLabels = chart.data.labels;
+      var fontSize    = 9;
+      var padding     = 5;
+      var maxLen      = 20;
+      var lineH       = fontSize + 3;
+      var badgeGap    = 4; // espace entre badges empilés
+
+      // Pré-calcul des hauteurs de chaque badge pour gérer l'empilement
+      var badgeInfos = travaux.map(function(t) {
+        var words = t.message.split(' ');
+        var lines = []; var line = '';
+        words.forEach(function(w) {
+          var candidate = line ? line + ' ' + w : w;
+          if (candidate.length <= maxLen) { line = candidate; }
+          else { if (line) lines.push(line); line = w.slice(0, maxLen); }
+        });
+        if (line) lines.push(line);
+        if (lines.length > 2) lines = [lines[0], lines[1].slice(0, maxLen-1) + '\u2026'];
+        ctx.font = 'bold ' + fontSize + 'px -apple-system,sans-serif';
+        var maxTextW = lines.reduce(function(mx, l) {
+          return Math.max(mx, ctx.measureText(l).width);
+        }, 0);
+        return {
+          date: t.date,
+          message: t.message,
+          lines: lines,
+          boxW: maxTextW + padding * 2 + 8,
+          boxH: lines.length * lineH + padding * 2
+        };
+      });
+
+      // Calcul des positions Y en tenant compte de l'empilement par date
+      // offsetByDate : pour chaque date, cumule la hauteur des badges déjà placés
+      var offsetByDate = {};
+      badgeInfos.forEach(function(b) {
+        if (offsetByDate[b.date] === undefined) offsetByDate[b.date] = 0;
+        b.stackOffset = offsetByDate[b.date];
+        offsetByDate[b.date] += b.boxH + badgeGap;
+      });
+
+      // Dessin
+      badgeInfos.forEach(function(b) {
+        var idx = chartLabels.indexOf(b.date);
+        if (idx === -1) return;
+        var x = xAxis.getPixelForValue(idx);
+
+        ctx.save();
+
+        // Ligne verticale pointillée verte
+        ctx.setLineDash([4, 3]);
+        ctx.strokeStyle = 'rgba(60,90,46,0.45)';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(x, top);
+        ctx.lineTo(x, bottom);
+        ctx.stroke();
+
+        // Point vert sous l'axe
+        ctx.setLineDash([]);
+        ctx.fillStyle = '#3c5a2e';
+        ctx.beginPath();
+        ctx.arc(x, bottom + 4, 3, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Position Y : base (32px sous l'axe pour laisser la date) + empilement
+        var boxY = bottom + 32 + b.stackOffset;
+        var boxX = Math.max(2, Math.min(x - b.boxW / 2, chart.width - b.boxW - 2));
+
+        // Fond arrondi
+        var r = 5;
+        ctx.fillStyle   = 'rgba(234,243,222,0.97)';
+        ctx.strokeStyle = '#3c5a2e';
+        ctx.lineWidth   = 1;
+        ctx.setLineDash([]);
+        ctx.beginPath();
+        ctx.moveTo(boxX+r, boxY);
+        ctx.lineTo(boxX+b.boxW-r, boxY);
+        ctx.quadraticCurveTo(boxX+b.boxW, boxY,        boxX+b.boxW, boxY+r);
+        ctx.lineTo(boxX+b.boxW, boxY+b.boxH-r);
+        ctx.quadraticCurveTo(boxX+b.boxW, boxY+b.boxH, boxX+b.boxW-r, boxY+b.boxH);
+        ctx.lineTo(boxX+r, boxY+b.boxH);
+        ctx.quadraticCurveTo(boxX, boxY+b.boxH,        boxX, boxY+b.boxH-r);
+        ctx.lineTo(boxX, boxY+r);
+        ctx.quadraticCurveTo(boxX, boxY,                boxX+r, boxY);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+
+        // Texte
+        ctx.fillStyle    = '#2d5a0e';
+        ctx.font         = 'bold ' + fontSize + 'px -apple-system,sans-serif';
+        ctx.textAlign    = 'center';
+        ctx.textBaseline = 'top';
+        b.lines.forEach(function(l, li) {
+          ctx.fillText(l, boxX + b.boxW / 2, boxY + padding + li * lineH);
+        });
+
+        ctx.restore();
+      });
+    }
+  };
+
+
+
+
+
+
+  var vDatasets = [
+    { label: 'ΔDensité/j', data: vitesses, borderColor: color, backgroundColor: color + '22',
+      borderWidth: 2, pointRadius: 4, pointBackgroundColor: color, fill: true, tension: 0.3, spanGaps: false }
+  ];
+  (vitesseThresholds || []).forEach(function(a) {
+    vDatasets.push({
+      label: a.nom + ' (' + a.seuil + ')',
+      data: labels.map(function(){ return a.seuil; }),
+      borderColor: threshColors[a.severity] || '#999',
+      borderWidth: 1.5, borderDash: [5,4], pointRadius: 0, fill: false
+    });
+  });
+
+  // Hauteur augmentée si des travaux sont à annoter (espace pour badges sous l'axe)
+  // Calcul de la hauteur max d'empilement par date pour réserver l'espace
+  var maxStackByDate = {};
+  travaux.forEach(function(t) {
+    maxStackByDate[t.date] = (maxStackByDate[t.date] || 0) + 1;
+  });
+  var maxStack = Object.keys(maxStackByDate).reduce(function(mx, d) {
+    return Math.max(mx, maxStackByDate[d]);
+  }, 0);
+  var extraBottom = travaux.length ? Math.max(80, 32 + maxStack * 36 + 10) : 0;
+  cv.parentElement.style.height = (220 + extraBottom) + 'px';
+
+  chartVitesse = new Chart(cv, {
+    type: 'line',
+    data: { labels: labels, datasets: vDatasets },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      layout: { padding: { top: 10, bottom: extraBottom } },
+      plugins: {
+        legend: { display: vDatasets.length > 1, labels: { font: { size: 11 }, boxWidth: 20 } }
+      },
+      scales: {
+        x: { ticks: { font:{size:11}, maxRotation:30 }, grid:{color:'rgba(0,0,0,.06)'} },
+        y: { ticks: { font:{size:11} }, grid:{color:'rgba(0,0,0,.06)'},
+          title: { display:true, text:'ΔDensité/j', font:{size:11} } }
+      }
+    },
+    plugins: [travauxPlugin]
+  });
+
+  var tDatasets = [
+    { label: 'Temp (°C)', data: temps, borderColor: '#a0522d', backgroundColor: '#a0522d22',
+      borderWidth: 2, pointRadius: 4, pointBackgroundColor: '#a0522d', fill: true, tension: 0.3 }
+  ];
+  (tempThresholds || []).forEach(function(a) {
+    tDatasets.push({
+      label: a.nom + ' (' + a.seuil + '°C)',
+      data: labels.map(function(){ return a.seuil; }),
+      borderColor: threshColors[a.severity] || '#999',
+      borderWidth: 1.5, borderDash: [5,4], pointRadius: 0, fill: false
+    });
+  });
+
+  chartTemp = new Chart(ct, {
+    type: 'line',
+    data: { labels: labels, datasets: tDatasets },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: tDatasets.length > 1, labels: { font:{size:11}, boxWidth:20 } } },
+      scales: {
+        x: { ticks: { font:{size:11}, maxRotation:30 }, grid:{color:'rgba(0,0,0,.06)'} },
+        y: { ticks: { font:{size:11} }, grid:{color:'rgba(0,0,0,.06)'},
+          title: { display:true, text:'°C', font:{size:11} } }
+      }
+    }
+  });
+}
+
+// ─── Utilitaires ──────────────────────────────────────────────────────────────
+function buildCuveTabs(containerId, active, onclickFn) {
+  var el = document.getElementById(containerId);
+  if (!el) return;
+  el.innerHTML = getSortedCuves().map(function(c){
+    var i = cuves.indexOf(c);
+    return '<button class="cuve-tab' + (i===active?' active':'') + '" onclick="' + onclickFn + '(' + i + ')">' + escHtml(c.nom) + '</button>';
+  }).join('');
+}
+
+// Retourne les cuves triées par nom (alphabétique + numérique naturel), en conservant leur index réel dans cuves[]
+function getSortedCuves(list) {
+  var source = list || cuves;
+  return source.slice().sort(function(a, b) {
+    return a.nom.localeCompare(b.nom, 'fr', { numeric: true, sensitivity: 'base' });
+  });
+}
+
+function escHtml(str) {
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ─── Nombres décimaux : accepte virgule OU point en saisie, affiche avec virgule ──
+function parseDecimal(str) {
+  if (str === null || str === undefined) return NaN;
+  var s = String(str).trim().replace(',', '.');
+  if (s === '') return NaN;
+  return parseFloat(s);
+}
+function fmtDecimal(num, digits) {
+  if (num === null || num === undefined || isNaN(num)) return '';
+  var n = (digits !== undefined) ? num.toFixed(digits) : String(num);
+  return n.replace('.', ',');
+}
+
+function renderAll() {
+  renderSaisieRapide();
+  renderDetail();
+  renderTableauResume();
+  
+  renderGraphiques();
+}
+
+function refreshOtherViews() {
+  renderSaisieRapide();
+  renderDetail();
+  renderTableauResume();
+  
+  renderGraphiques();
+}
+
+function showView(name, tab) {
+  ['saisie','detail','tableaux','graphiques'].forEach(function(v){
+    var el = document.getElementById('view-' + v);
+    if (el) el.style.display = v===name ? '' : 'none';
+  });
+  document.querySelectorAll('.nav-tab').forEach(function(t){ t.classList.remove('active'); });
+  if (tab) tab.classList.add('active');
+  // Bouton export CSV visible uniquement en Détail cuves
+  var btnExport = document.getElementById('btn-export-all');
+  if (btnExport) btnExport.style.display = name === 'detail' ? '' : 'none';
+  if (name === 'saisie')     renderSaisieRapide();
+  if (name === 'detail')     renderDetail();
+  if (name === 'tableaux')   { renderTableauResume(); }
+  if (name === 'graphiques') renderGraphiques();
+}
+
+// ─── Données de démo ──────────────────────────────────────────────────────────
+function loadDemo() {
+  cuves = [
+    { nom: 'Cuve A — Rouge', appellation: 'Côtes de Provence', couleur: 'Rouge', qualite: 'BIO', mesures: [
+      { date: '2024-09-10', densite: 1.085, temperature: 20 },
+      { date: '2024-09-11', densite: 1.072, temperature: 21 },
+      { date: '2024-09-12', densite: 1.055, temperature: 23 },
+      { date: '2024-09-13', densite: 1.035, temperature: 25 },
+      { date: '2024-09-14', densite: 1.018, temperature: 24 },
+      { date: '2024-09-15', densite: 1.008, temperature: 22 },
+    ]},
+    { nom: 'Cuve B — Blanc', appellation: 'Luberon', couleur: 'Blanc', qualite: 'HVE', mesures: [
+      { date: '2024-09-10', densite: 1.078, temperature: 16 },
+      { date: '2024-09-11', densite: 1.071, temperature: 17 },
+      { date: '2024-09-12', densite: 1.063, temperature: 18 },
+      { date: '2024-09-13', densite: 1.050, temperature: 18 },
+      { date: '2024-09-14', densite: 1.042, temperature: 17 },
+      { date: '2024-09-15', densite: 1.039, temperature: 16 },
+    ]},
+    { nom: 'Cuve C — Rosé', appellation: 'Côtes de Provence', couleur: 'Rosé', qualite: '', mesures: [
+      { date: '2024-09-11', densite: 1.068, temperature: 19 },
+      { date: '2024-09-12', densite: 1.065, temperature: 20 },
+      { date: '2024-09-13', densite: 1.063, temperature: 19 },
+      { date: '2024-09-14', densite: 1.062, temperature: 18 },
+      { date: '2024-09-15', densite: 1.061, temperature: 18 },
+    ]},
+  ];
+}
+
+// ─── Init ──────────────────────────────────────────────────────────────────────
+window.addEventListener('DOMContentLoaded', function() {
+  // Compatibilité : renderLogin devient no-op, géré par Supabase
+});
+</script>
+
+</div><!-- /#app-desktop -->
+
+<!-- ── Interface mobile ─────────────────────────────────────────────────── -->
+<div id="app-mobile" style="display:none">
+  <div class="mobile-wrap">
+    <div class="mobile-header">
+      <span class="mobile-title">🍷 Fermentation</span>
+      <div style="display:flex;gap:8px;align-items:center">
+        <span id="mobile-user-badge" style="font-size:12px;color:var(--c-muted)"></span>
+        <button class="btn btn-sm" onclick="sbLogout()">Déconnexion</button>
+      </div>
+    </div>
+
+    <!-- Saisie vocale -->
+    <div class="mobile-card">
+      <h3>🎤 Saisie vocale</h3>
+      <div style="font-size:12px;color:var(--c-muted);margin-bottom:12px">
+        Dites par exemple : <em>« Cuve 12, densité 1080, température 20 »</em>
+      </div>
+      <button class="btn-voice" id="btn-voice" onclick="startVoice()">
+        🎤 Appuyer et parler
+      </button>
+      <div id="voice-feedback" class="voice-feedback">En attente de saisie vocale…</div>
+      <div id="voice-form" style="display:none;margin-top:14px">
+        <div style="display:grid;gap:10px">
+          <div>
+            <label>Cuve</label>
+            <select id="voice-cuve"></select>
+          </div>
+          <div>
+            <label>Densité (g/cm³)</label>
+            <input type="text" inputmode="decimal" id="voice-densite">
+          </div>
+          <div>
+            <label>Température (°C)</label>
+            <input type="text" inputmode="decimal" id="voice-temp">
+          </div>
+          <div>
+            <label>Date</label>
+            <input type="date" id="voice-date">
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:12px">
+          <button class="btn btn-primary" style="flex:1" onclick="saveMobileMesure()">💾 Enregistrer</button>
+          <button class="btn" onclick="cancelVoiceForm()">Annuler</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Saisie manuelle rapide -->
+    <div class="mobile-card">
+      <h3>✏️ Saisie manuelle</h3>
+      <div style="display:grid;gap:10px">
+        <div>
+          <label>Cuve</label>
+          <select id="manual-cuve"></select>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div>
+            <label>Densité</label>
+            <input type="text" inputmode="decimal" id="manual-densite" placeholder="1,080">
+          </div>
+          <div>
+            <label>Température</label>
+            <input type="text" inputmode="decimal" id="manual-temp" placeholder="20">
+          </div>
+        </div>
+        <div>
+          <label>Date</label>
+          <input type="date" id="manual-date">
+        </div>
+      </div>
+      <button class="btn btn-primary" style="width:100%;margin-top:12px" onclick="saveMobileMesureManual()">💾 Enregistrer</button>
+    </div>
+
+    <!-- Nouvelle cuve -->
+    <div class="mobile-card">
+      <h3>+ Nouvelle cuve</h3>
+      <div style="display:flex;gap:8px">
+        <input type="text" id="mobile-new-cuve" placeholder="Nom de la cuve" style="flex:1">
+        <button class="btn btn-primary" onclick="addMobileCuve()">Créer</button>
+      </div>
+    </div>
+
+    <!-- Dernières mesures (lecture seule) -->
+    <div class="mobile-card">
+      <h3>📊 Dernières mesures</h3>
+      <div id="mobile-mesures-list" style="font-size:13px"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ─── Supabase ─────────────────────────────────────────────────────────────────
+var SUPABASE_URL = 'https://gctvtjelleajwpcbkqqs.supabase.co';
+var SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdjdHZ0amVsbGVhandwY2JrcXFzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMzNDYwMzgsImV4cCI6MjA5ODkyMjAzOH0.SdkuiIjqJbOcCCRbacCCY5Qme5Ayy1RX29XWGlXGAyc';
+var sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+var currentOrgId = null;
+var currentUserName = '';
+var isMobile = window.innerWidth <= 768;
+
+// ─── Auth ────────────────────────────────────────────────────────────────────
+async function sbLogin() {
+  var email    = document.getElementById('sb-email').value.trim();
+  var password = document.getElementById('sb-password').value;
+  var errEl    = document.getElementById('sb-error');
+  errEl.style.display = 'none';
+  if (!email || !password) { errEl.textContent = 'Email et mot de passe requis.'; errEl.style.display = 'block'; return; }
+  var btn = document.querySelector('#login-form .btn-primary');
+  btn.textContent = 'Connexion…'; btn.disabled = true;
+  var result = await sb.auth.signInWithPassword({ email: email, password: password });
+  btn.textContent = 'Se connecter'; btn.disabled = false;
+  if (result.error) { errEl.textContent = result.error.message; errEl.style.display = 'block'; return; }
+  await onLogin(result.data.user);
+}
+
+async function onLogin(user) {
+  // Charger le profil
+  var profil = await sb.from('profiles').select('org_id, nom, role').eq('id', user.id).single();
+  if (profil.error || !profil.data) {
+    document.getElementById('sb-error').textContent = 'Profil introuvable. Contactez votre administrateur.';
+    document.getElementById('sb-error').style.display = 'block';
+    document.getElementById('login-form').style.display = 'block';
+    document.getElementById('login-loading').style.display = 'none';
+    return;
+  }
+  currentOrgId   = profil.data.org_id;
+  currentUserName = profil.data.nom;
+  currentUser     = profil.data.nom;
+  // Charger toutes les données
+  await Promise.all([ loadSbCuves(), loadSbGlobal() ]);
+  document.getElementById('login-overlay').style.display = 'none';
+  // Afficher bonne interface selon device
+  isMobile = window.innerWidth <= 768;
+  if (isMobile) {
+    document.getElementById('app-mobile').style.display = 'block';
+    document.getElementById('mobile-user-badge').textContent = '👤 ' + escHtml(currentUserName);
+    renderMobile();
+  } else {
+    document.getElementById('app-desktop').style.display = 'block';
+    document.getElementById('user-badge').style.display = 'flex';
+    document.getElementById('user-badge').innerHTML = '👤 ' + escHtml(currentUserName);
+    document.getElementById('btn-logout').style.display = '';
+    renderAll();
+  }
+}
+
+async function sbLogout() {
+  await sb.auth.signOut();
+  currentOrgId = null; currentUser = null; cuves = [];
+  alertes = JSON.parse(JSON.stringify(DEFAULT_ALERTES));
+  document.getElementById('app-desktop').style.display = 'none';
+  document.getElementById('app-mobile').style.display = 'none';
+  document.getElementById('login-overlay').style.display = 'flex';
+  document.getElementById('login-loading').style.display = 'none';
+  document.getElementById('login-form').style.display = 'block';
+  document.getElementById('sb-email').value = '';
+  document.getElementById('sb-password').value = '';
+}
+
+function logout() { sbLogout(); }
+
+// ─── Chargement Supabase → mémoire ───────────────────────────────────────────
+async function loadSbCuves() {
+  var r = await sb.from('cuves').select('*, mesures(date,densite,temperature)').eq('org_id', currentOrgId).order('nom');
+  if (r.error) { console.error('loadSbCuves:', r.error); cuves = []; return; }
+  cuves = (r.data || []).map(function(c) {
+    var mes = (c.mesures || []).slice().sort(function(a,b){ return a.date.localeCompare(b.date); });
+    return {
+      _id: c.id,
+      nom: c.nom,
+      appellation: c.appellation || '',
+      couleur: c.couleur || '',
+      qualite: c.qualite || '',
+      tap: c.tap,
+      azoteAssimilable: c.azote_assimilable,
+      levure: c.levure_nom || '',
+      archived: c.archived || false,
+      dateArchive: c.date_archive || null,
+      alertesValidees: Array.isArray(c.alertes_validees) ? c.alertes_validees : [],
+      mesures: mes.map(function(m){ return { date: m.date, densite: parseFloat(m.densite), temperature: parseFloat(m.temperature) }; })
+    };
+  });
+}
+
+async function loadSbGlobal() {
+  var [ rAl, rLe, rVa ] = await Promise.all([
+    sb.from('alertes_globales').select('app_id,config').eq('org_id', currentOrgId),
+    sb.from('levures').select('*').eq('org_id', currentOrgId).order('nom'),
+    sb.from('variables_calculees').select('*').eq('org_id', currentOrgId).order('ordre')
+  ]);
+  alertes = (rAl.data && rAl.data.length)
+    ? rAl.data.map(function(r){ return Object.assign({ _sbid: r.app_id }, r.config); })
+    : JSON.parse(JSON.stringify(DEFAULT_ALERTES));
+  levures = (rLe.data && rLe.data.length)
+    ? rLe.data.map(function(r){ return { _sbid: r.id, id: r.id, nom: r.nom, besoinAzote: r.besoin_azote }; })
+    : JSON.parse(JSON.stringify(DEFAULT_LEVURES));
+  variablesCalculees = (rVa.data || []).map(function(r){
+    return { _sbid: r.id, id: r.id, nom: r.nom, formule: r.formule, unite: r.unite || '', visible: r.visible, ordre: r.ordre };
+  });
+}
+
+// ─── Sauvegarde Supabase ──────────────────────────────────────────────────────
+async function saveUserData() {
+  if (!currentOrgId) return;
+  for (var i = 0; i < cuves.length; i++) {
+    var c = cuves[i];
+    var payload = {
+      org_id: currentOrgId, nom: c.nom,
+      appellation: c.appellation || '', couleur: c.couleur || '', qualite: c.qualite || '',
+      tap: c.tap || null, azote_assimilable: c.azoteAssimilable || null, levure_nom: c.levure || '',
+      archived: !!c.archived, date_archive: c.dateArchive || null,
+      alertes_validees: JSON.stringify(c.alertesValidees || [])
+    };
+    var r;
+    if (c._id) {
+      r = await sb.from('cuves').update(payload).eq('id', c._id);
+    } else {
+      r = await sb.from('cuves').insert(payload).select('id').single();
+      if (r.data) c._id = r.data.id;
+    }
+    if (r.error) console.error('saveUserData cuve:', r.error);
+    // Mesures : upsert
+    if (c._id && c.mesures.length) {
+      var mesRows = c.mesures.map(function(m){ return { cuve_id: c._id, org_id: currentOrgId, date: m.date, densite: m.densite, temperature: m.temperature }; });
+      var rm = await sb.from('mesures').upsert(mesRows, { onConflict: 'cuve_id,date' });
+      if (rm.error) console.error('saveUserData mesures:', rm.error);
+    }
+  }
+}
+
+async function saveGlobalAlertes() {
+  if (!currentOrgId) return;
+  await sb.from('alertes_globales').delete().eq('org_id', currentOrgId);
+  if (!alertes.length) return;
+  var rows = alertes.map(function(a){ var c = Object.assign({},a); delete c._sbid; return { org_id: currentOrgId, app_id: String(a.id || a._sbid), config: c }; });
+  var r = await sb.from('alertes_globales').insert(rows);
+  if (r.error) console.error('saveGlobalAlertes:', r.error);
+}
+
+async function saveGlobalLevures() {
+  if (!currentOrgId) return;
+  await sb.from('levures').delete().eq('org_id', currentOrgId);
+  if (!levures.length) return;
+  var rows = levures.map(function(l){ return { org_id: currentOrgId, nom: l.nom, besoin_azote: l.besoinAzote || 'Moyen' }; });
+  var r = await sb.from('levures').insert(rows);
+  if (r.error) console.error('saveGlobalLevures:', r.error);
+}
+
+async function saveGlobalVariables() {
+  if (!currentOrgId) return;
+  await sb.from('variables_calculees').delete().eq('org_id', currentOrgId);
+  if (!variablesCalculees.length) return;
+  var rows = variablesCalculees.map(function(v, i){ return { org_id: currentOrgId, nom: v.nom, formule: v.formule || '', unite: v.unite || '', visible: v.visible !== false, ordre: i }; });
+  var r = await sb.from('variables_calculees').insert(rows);
+  if (r.error) console.error('saveGlobalVariables:', r.error);
+}
+
+// Compatibilité : ces fonctions étaient appelées mais sans Supabase n'ont rien à charger
+// (tout est déjà en mémoire depuis loadSbGlobal)
+function loadGlobalAlertes()   {}
+function loadGlobalLevures()   {}
+function loadGlobalVariables() {}
+
+// ─── Interface mobile ─────────────────────────────────────────────────────────
+function renderMobile() {
+  // Remplir les selects de cuves
+  var cuvesActives = getSortedCuves().filter(function(c){ return !c.archived; });
+  var opts = cuvesActives.map(function(c){ return '<option value="' + cuves.indexOf(c) + '">' + escHtml(c.nom) + '</option>'; }).join('');
+  ['voice-cuve','manual-cuve'].forEach(function(id){
+    var el = document.getElementById(id);
+    if (el) el.innerHTML = opts || '<option value="">Aucune cuve</option>';
+  });
+  // Date du jour par défaut
+  var today = new Date().toISOString().slice(0,10);
+  ['voice-date','manual-date'].forEach(function(id){
+    var el = document.getElementById(id);
+    if (el && !el.value) el.value = today;
+  });
+  // Dernières mesures
+  renderMobileMesures();
+}
+
+function renderMobileMesures() {
+  var el = document.getElementById('mobile-mesures-list');
+  if (!el) return;
+  var actives = getSortedCuves().filter(function(c){ return !c.archived && c.mesures.length; });
+  if (!actives.length) { el.innerHTML = '<div style="color:var(--c-muted)">Aucune mesure enregistrée.</div>'; return; }
+  el.innerHTML = actives.map(function(c) {
+    var m = c.mesures[c.mesures.length-1];
+    var activeAl = evalAlertesCuve(c);
+    var alertHtml = activeAl.length
+      ? '<div style="margin-top:4px">' + activeAl.map(function(a){
+          return '<span style="font-size:11px;background:var(--c-amber);color:var(--c-amber-text);padding:2px 6px;border-radius:10px;margin-right:4px">⚠ ' + escHtml(a.message) + '</span>';
+        }).join('') + '</div>'
+      : '';
+    return '<div style="padding:10px 0;border-bottom:1px solid var(--c-border)">'
+      + '<div style="font-weight:600">' + escHtml(c.nom) + '</div>'
+      + '<div style="font-size:12px;color:var(--c-muted)">' + m.date
+      + ' · ' + fmtDecimal(m.densite, 3) + ' g/cm³'
+      + ' · ' + fmtDecimal(m.temperature, 1) + '°C</div>'
+      + alertHtml
+      + '</div>';
+  }).join('');
+}
+
+async function saveMobileMesure() {
+  var ci   = parseInt(document.getElementById('voice-cuve').value);
+  var dens = parseDecimal(document.getElementById('voice-densite').value);
+  var temp = parseDecimal(document.getElementById('voice-temp').value);
+  var date = document.getElementById('voice-date').value;
+  if (isNaN(dens) || isNaN(temp) || !date) { alert('Données incomplètes.'); return; }
+  cuves[ci].mesures.push({ date: date, densite: dens, temperature: temp });
+  cuves[ci].mesures.sort(function(a,b){ return a.date.localeCompare(b.date); });
+  await saveUserData();
+  document.getElementById('voice-form').style.display = 'none';
+  document.getElementById('voice-feedback').textContent = '✓ Mesure enregistrée !';
+  document.getElementById('voice-feedback').className = 'voice-feedback ok';
+  renderMobile();
+}
+
+async function saveMobileMesureManual() {
+  var ci   = parseInt(document.getElementById('manual-cuve').value);
+  var dens = parseDecimal(document.getElementById('manual-densite').value);
+  var temp = parseDecimal(document.getElementById('manual-temp').value);
+  var date = document.getElementById('manual-date').value;
+  if (isNaN(ci) || isNaN(dens) || isNaN(temp) || !date) { alert('Données incomplètes.'); return; }
+  cuves[ci].mesures.push({ date: date, densite: dens, temperature: temp });
+  cuves[ci].mesures.sort(function(a,b){ return a.date.localeCompare(b.date); });
+  await saveUserData();
+  document.getElementById('manual-densite').value = '';
+  document.getElementById('manual-temp').value = '';
+  alert('Mesure enregistrée !');
+  renderMobile();
+}
+
+async function addMobileCuve() {
+  var nom = document.getElementById('mobile-new-cuve').value.trim();
+  if (!nom) { alert('Saisir un nom de cuve.'); return; }
+  cuves.push({ nom: nom, mesures: [], archived: false, appellation:'', couleur:'', qualite:'', tap:null, azoteAssimilable:null, levure:'', alertesValidees:[] });
+  await saveUserData();
+  document.getElementById('mobile-new-cuve').value = '';
+  renderMobile();
+  alert('Cuve « ' + nom + ' » créée !');
+}
+
+function cancelVoiceForm() {
+  document.getElementById('voice-form').style.display = 'none';
+  document.getElementById('voice-feedback').textContent = 'Saisie annulée.';
+  document.getElementById('voice-feedback').className = 'voice-feedback';
+}
+
+// ─── Saisie vocale ────────────────────────────────────────────────────────────
+var _recognition = null;
+
+function startVoice() {
+  var btn = document.getElementById('btn-voice');
+  var fb  = document.getElementById('voice-feedback');
+  var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+    fb.textContent = 'La reconnaissance vocale n\'est pas supportée sur ce navigateur. Utilisez Chrome ou Safari.';
+    fb.className = 'voice-feedback error';
+    return;
+  }
+  if (_recognition) { _recognition.stop(); return; }
+  _recognition = new SpeechRecognition();
+  _recognition.lang = 'fr-FR';
+  _recognition.continuous = false;
+  _recognition.interimResults = false;
+  btn.className = 'btn-voice listening';
+  btn.textContent = '⏹ Écoute en cours…';
+  fb.textContent = 'Parlez maintenant…';
+  fb.className = 'voice-feedback';
+  _recognition.onresult = function(event) {
+    var transcript = event.results[0][0].transcript;
+    fb.textContent = '« ' + transcript + ' »';
+    parseVoiceInput(transcript);
+  };
+  _recognition.onerror = function(e) {
+    fb.textContent = 'Erreur : ' + e.error + '. Réessayez.';
+    fb.className = 'voice-feedback error';
+  };
+  _recognition.onend = function() {
+    btn.className = 'btn-voice';
+    btn.textContent = '🎤 Appuyer et parler';
+    _recognition = null;
+  };
+  _recognition.start();
+}
+
+function parseVoiceInput(text) {
+  var fb = document.getElementById('voice-feedback');
+  // Normalise : retire accents de "densité/température", convertit virgules en points
+  var t = text.toLowerCase()
+    .replace(/densité|densite|densitée/g, 'densite')
+    .replace(/température|temperature|temp/g, 'temperature')
+    .replace(/virgule/g, '.')
+    .replace(/,/g, '.');
+
+  // Cherche la cuve : "cuve X" ou "cuve numéro X"
+  var cuveMatch = t.match(/cuve\s+(?:num[eé]ro\s+)?([a-z0-9\s]+?)(?:\s+densite|\s+temperature|$)/i);
+  var densMatch  = t.match(/densite\s+([\d.]+)/i);
+  var tempMatch  = t.match(/temperature\s+([\d.]+)/i);
+
+  if (!cuveMatch && !densMatch && !tempMatch) {
+    fb.textContent = '❌ Phrase non reconnue. Essayez : « Cuve 12, densité 1080, température 20 »';
+    fb.className = 'voice-feedback error';
+    return;
+  }
+
+  // Recherche la cuve par nom
+  var cuveNom = cuveMatch ? cuveMatch[1].trim() : '';
+  var cuveIdx = -1;
+  if (cuveNom) {
+    cuves.forEach(function(c, i) {
+      if (!c.archived && c.nom.toLowerCase() === cuveNom) cuveIdx = i;
+    });
+    // Recherche partielle si pas de match exact
+    if (cuveIdx === -1) {
+      cuves.forEach(function(c, i) {
+        if (!c.archived && c.nom.toLowerCase().indexOf(cuveNom) !== -1) cuveIdx = i;
+      });
+    }
+  }
+
+  // Pré-remplir le formulaire
+  var cuveEl  = document.getElementById('voice-cuve');
+  var densEl  = document.getElementById('voice-densite');
+  var tempEl  = document.getElementById('voice-temp');
+  if (cuveIdx !== -1) cuveEl.value = cuveIdx;
+  if (densMatch)  densEl.value  = fmtDecimal(parseFloat(densMatch[1]), 3);
+  if (tempMatch)  tempEl.value  = fmtDecimal(parseFloat(tempMatch[1]), 1);
+  document.getElementById('voice-form').style.display = 'block';
+  fb.className = 'voice-feedback ok';
+  fb.textContent = '✓ Vérifiez et confirmez :';
+}
+
+// ─── Init ─────────────────────────────────────────────────────────────────────
+window.addEventListener('DOMContentLoaded', async function() {
+  // Vérifier session existante
+  var session = await sb.auth.getSession();
+  if (session.data.session) {
+    await onLogin(session.data.session.user);
+  } else {
+    document.getElementById('login-loading').style.display = 'none';
+    document.getElementById('login-form').style.display = 'block';
+  }
+  // Touches clavier login
+  ['sb-email','sb-password'].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) el.addEventListener('keydown', function(e){ if (e.key === 'Enter') sbLogin(); });
+  });
+  // Admin
+  var adminInput = document.getElementById('admin-code-input');
+  if (adminInput) {
+    adminInput.addEventListener('keydown', function(e){
+      if (e.key === 'Enter') validateAdminCode();
+      if (e.key === 'Escape') showLoginPanel();
+    });
+  }
+  // Offset sticky
+  function updateStickyOffset() {
+    var st = document.querySelector('.sticky-top');
+    if (st) document.documentElement.style.setProperty('--sticky-offset', st.getBoundingClientRect().height + 'px');
+  }
+  updateStickyOffset();
+  window.addEventListener('resize', updateStickyOffset);
+  setTimeout(updateStickyOffset, 300);
+});
+</script>
+</body>
+</html>
