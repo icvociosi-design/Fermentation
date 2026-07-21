@@ -5,8 +5,20 @@ fichier unique `index.html` (HTML/CSS/JS, sans build).
 
 ## Roadmap en cours
 
-- [ ] Authentification et stockage via Supabase (remplacement de `localStorage`)
+- [x] Authentification et stockage via Supabase (remplacement de `localStorage`)
 - [ ] Vue mobile allégée (Saisie rapide + création de cuve)
 - [ ] Saisie vocale sur Android (Cuve, Densité, Température)
 
 Ces évolutions sont livrées via des Pull Requests successives.
+
+## Configuration Supabase (à faire une seule fois)
+
+1. Ouvrir le [SQL Editor](https://supabase.com/dashboard/project/gctvtjelleajwpcbkqqs/sql/new)
+   du projet Supabase et exécuter le contenu de [`supabase/schema.sql`](supabase/schema.sql).
+2. Créer un compte depuis l'application (email + mot de passe, bouton
+   « Créer un compte » sur l'écran de connexion).
+3. Dans le [Table Editor](https://supabase.com/dashboard/project/gctvtjelleajwpcbkqqs/editor),
+   table `profiles`, passer votre ligne à `is_admin = true` pour accéder au panneau
+   ⚙ Paramètres (référentiel de levures, variables calculées, alertes).
+4. La création/suppression de comptes se fait ensuite depuis
+   [Authentication → Users](https://supabase.com/dashboard/project/gctvtjelleajwpcbkqqs/auth/users).

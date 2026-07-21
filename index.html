@@ -7,6 +7,7 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.1/dist/jspdf.plugin.autotable.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   :root {
@@ -193,16 +194,20 @@
   <!-- Panneau principal de login -->
   <div id="login-panel" class="login-box">
     <div class="login-title">🍷 Suivi de fermentation</div>
-    <div class="login-sub">Identifiez-vous pour retrouver vos données</div>
-    <div id="login-user-list" class="login-users"></div>
-    <div class="login-sep">ou créer un compte</div>
-    <div class="login-new">
-      <input type="text" id="new-username" placeholder="Nouveau nom d'utilisateur" maxlength="40">
-      <button class="btn btn-primary" onclick="createUser()">Créer ou Charger</button>
-    </div>
-    <div style="margin-top:14px;text-align:right">
-      <button class="btn btn-sm" onclick="showAdminPanel()">⚙ Paramètres</button>
-    </div>
+    <div class="login-sub" id="login-sub-text">Connectez-vous pour retrouver vos données</div>
+
+    <div id="login-loading" style="display:none;text-align:center;padding:16px 0;color:var(--c-muted);font-size:13px">Connexion…</div>
+
+    <form id="login-form" onsubmit="return false;">
+      <label>Email</label>
+      <input type="email" id="auth-email" placeholder="vous@exemple.fr" autocomplete="username" style="margin-bottom:10px">
+      <label>Mot de passe</label>
+      <input type="password" id="auth-password" placeholder="••••••••" autocomplete="current-password" style="margin-bottom:6px">
+      <div id="auth-err" style="font-size:12px;color:var(--c-red-text);margin-bottom:8px;display:none"></div>
+      <div id="auth-info" style="font-size:12px;color:var(--c-green-text);margin-bottom:8px;display:none"></div>
+      <button class="btn btn-primary" id="auth-submit-btn" style="width:100%" onclick="submitAuthForm()">Se connecter</button>
+      <div class="login-sep" id="auth-toggle-sep" style="cursor:pointer" onclick="toggleAuthMode()">Pas encore de compte ? <strong>Créer un compte</strong></div>
+    </form>
   </div>
 </div>
 
@@ -213,7 +218,7 @@
     <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 24px;border-bottom:1px solid var(--c-border);background:#fff;flex-shrink:0">
       <div style="display:flex;align-items:center;gap:16px">
         <span style="font-size:16px;font-weight:700">⚙ Paramètres</span>
-        <div id="admin-tabs" class="nav" style="margin:0;border:none;display:none">
+        <div id="admin-tabs" class="nav" style="margin:0;border:none">
           <button class="nav-tab active" onclick="showAdminTab('comptes',this)">👤 Comptes</button>
           <button class="nav-tab" onclick="showAdminTab('levures',this)">🍶 Levures</button>
           <button class="nav-tab" onclick="showAdminTab('variables',this)">𝑥 Variables</button>
@@ -223,21 +228,8 @@
       <button class="btn btn-sm" onclick="showLoginPanel()">✕ Fermer</button>
     </div>
 
-    <!-- Étape 1 : saisie du code -->
-    <div id="admin-auth-step" style="display:flex;flex:1;align-items:center;justify-content:center">
-      <div style="min-width:280px">
-        <div class="login-sub">Accès réservé à l'administrateur</div>
-        <label style="margin-bottom:4px">Code administrateur</label>
-        <input type="password" id="admin-code-input" placeholder="Code…" autocomplete="off" style="margin-bottom:8px">
-        <div id="admin-err" style="font-size:12px;color:var(--c-red-text);margin-bottom:8px;display:none">Code incorrect.</div>
-        <div style="display:flex;gap:8px;justify-content:flex-end">
-          <button class="btn btn-primary btn-sm" onclick="validateAdminCode()">Accéder</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- Étape 2 : contenu par onglet -->
-    <div id="admin-content-step" style="display:none">
+    <!-- Contenu par onglet (accès déjà vérifié via profiles.is_admin avant l'ouverture du panneau) -->
+    <div id="admin-content-step" style="display:block">
 
       <!-- Onglet Comptes -->
       <div id="admin-tab-comptes" class="admin-tab-pane">
@@ -303,7 +295,8 @@
     </div>
     <div class="header-user">
       <div id="user-badge" class="user-badge" style="display:none"></div>
-      <button class="btn btn-sm" onclick="logout()" id="btn-logout" style="display:none">Changer d'utilisateur</button>
+      <button class="btn btn-sm" onclick="showAdminPanel()" id="btn-admin-settings" style="display:none">⚙ Paramètres</button>
+      <button class="btn btn-sm" onclick="logout()" id="btn-logout" style="display:none">Déconnexion</button>
       <button class="btn btn-sm" id="btn-export-all" onclick="exportAllCuvesCSV()" style="display:none" title="Exporter toutes les cuves en CSV">⬇ Export CSV</button>
       <button class="btn btn-primary" onclick="addCuve()">+ Nouvelle cuve</button>
     </div>
@@ -476,164 +469,202 @@ var DEFAULT_LEVURES = [
   { id: 4, nom: 'VL3',       besoinAzote: 'Moyen' },
 ];
 
-// ─── Persistance (localStorage) ──────────────────────────────────────────────
-function getStore() {
-  try { return JSON.parse(localStorage.getItem('fermTracker') || '{}'); } catch(e) { return {}; }
+// ─── Supabase ─────────────────────────────────────────────────────────────────
+var SUPABASE_URL = 'https://gctvtjelleajwpcbkqqs.supabase.co';
+var SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdjdHZ0amVsbGVhandwY2JrcXFzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMzNDYwMzgsImV4cCI6MjA5ODkyMjAzOH0.SdkuiIjqJbOcCCRbacCCY5Qme5Ayy1RX29XWGlXGAyc';
+var sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// Écriture Supabase en arrière-plan (UI déjà mise à jour de façon optimiste) : logge et alerte en cas d'échec
+function sbSync(promise, label) {
+  promise.then(function(r){
+    if (r && r.error) {
+      console.error(label, r.error);
+      alert('Échec de la synchronisation (' + label + ') : ' + r.error.message);
+    }
+  });
 }
-function saveStore(store) {
-  try { localStorage.setItem('fermTracker', JSON.stringify(store)); } catch(e) {}
+
+var currentUserId = null;   // uuid Supabase (auth.users.id)
+var currentIsAdmin = false;
+var _authMode = 'signin';   // 'signin' | 'signup'
+
+// ─── Persistance : cuves / mesures (privées, écriture ciblée par mutation) ───
+function mapSupabaseCuve(c) {
+  var mes = (c.mesures || []).slice().sort(function(a,b){ return a.date.localeCompare(b.date); });
+  return {
+    _id: c.id,
+    nom: c.nom,
+    appellation: c.appellation || '',
+    couleur: c.couleur || '',
+    qualite: c.qualite || '',
+    tap: c.tap,
+    azoteAssimilable: c.azote_assimilable,
+    levure: c.levure || '',
+    active: true,
+    archived: c.archived || false,
+    dateArchive: c.date_archive || null,
+    alertesValidees: Array.isArray(c.alertes_validees) ? c.alertes_validees : [],
+    mesures: mes.map(function(m){ return { date: m.date, densite: Number(m.densite), temperature: Number(m.temperature) }; })
+  };
 }
-function getUserList() {
-  return getStore().users || [];
+async function loadCuvesFromSupabase() {
+  var r = await sb.from('cuves').select('*, mesures(date,densite,temperature)').eq('user_id', currentUserId).order('nom');
+  if (r.error) { console.error('loadCuvesFromSupabase:', r.error); cuves = []; return; }
+  cuves = (r.data || []).map(mapSupabaseCuve);
 }
 // Alertes globales (partagées entre tous les comptes)
-function loadGlobalAlertes() {
-  var store = getStore();
-  alertes = store.alertes ? JSON.parse(JSON.stringify(store.alertes)) : JSON.parse(JSON.stringify(DEFAULT_ALERTES));
+async function loadGlobalAlertes() {
+  var r = await sb.from('alertes_globales').select('*').order('id');
+  if (r.error || !r.data || !r.data.length) { alertes = JSON.parse(JSON.stringify(DEFAULT_ALERTES)); return; }
+  alertes = r.data.map(function(a) {
+    return { id: a.id, nom: a.nom, jonctions: a.jonctions || [], conditions: a.conditions || [], severity: a.severity, message: a.message, reactivable: a.reactivable !== false };
+  });
 }
-function saveGlobalAlertes() {
-  var store = getStore();
-  store.alertes = alertes;
-  saveStore(store);
+async function saveGlobalAlertes() {
+  await sb.from('alertes_globales').delete().neq('id', -1);
+  if (!alertes.length) return;
+  var rows = alertes.map(function(a) {
+    return { nom: a.nom, jonctions: a.jonctions || [], conditions: a.conditions || [], severity: a.severity, message: a.message, reactivable: a.reactivable !== false };
+  });
+  var r = await sb.from('alertes_globales').insert(rows).select('id');
+  if (r.error) { console.error('saveGlobalAlertes:', r.error); return; }
+  r.data.forEach(function(row, i){ alertes[i].id = row.id; });
 }
 // Levures globales (partagées entre tous les comptes)
-function loadGlobalLevures() {
-  var store = getStore();
-  levures = store.levures ? JSON.parse(JSON.stringify(store.levures)) : JSON.parse(JSON.stringify(DEFAULT_LEVURES));
+async function loadGlobalLevures() {
+  var r = await sb.from('levures').select('*').order('id');
+  if (r.error || !r.data || !r.data.length) { levures = JSON.parse(JSON.stringify(DEFAULT_LEVURES)); return; }
+  levures = r.data.map(function(l){ return { id: l.id, nom: l.nom, besoinAzote: l.besoin_azote }; });
 }
-function saveGlobalLevures() {
-  var store = getStore();
-  store.levures = levures;
-  saveStore(store);
+async function saveGlobalLevures() {
+  await sb.from('levures').delete().neq('id', -1);
+  if (!levures.length) return;
+  var rows = levures.map(function(l){ return { nom: l.nom, besoin_azote: l.besoinAzote }; });
+  var r = await sb.from('levures').insert(rows).select('id');
+  if (r.error) { console.error('saveGlobalLevures:', r.error); return; }
+  r.data.forEach(function(row, i){ levures[i].id = row.id; });
 }
 // Variables calculées globales (partagées entre tous les comptes)
-function loadGlobalVariables() {
-  var store = getStore();
-  variablesCalculees = store.variablesCalculees ? JSON.parse(JSON.stringify(store.variablesCalculees)) : [];
+async function loadGlobalVariables() {
+  var r = await sb.from('variables_calculees').select('*').order('ordre');
+  if (r.error) { console.error('loadGlobalVariables:', r.error); variablesCalculees = []; return; }
+  variablesCalculees = (r.data || []).map(function(v){ return { id: v.id, nom: v.nom, formule: v.formule }; });
 }
-function saveGlobalVariables() {
-  var store = getStore();
-  store.variablesCalculees = variablesCalculees;
-  saveStore(store);
-}
-function saveUserData() {
-  if (!currentUser) return;
-  var store = getStore();
-  if (!store.users) store.users = [];
-  if (store.users.indexOf(currentUser) === -1) store.users.push(currentUser);
-  store['data_' + currentUser] = { cuves: cuves };
-  saveStore(store);
-}
-function loadUserData(username) {
-  var store = getStore();
-  var data = store['data_' + username];
-  if (data) {
-    cuves = data.cuves || [];
-  } else {
-    cuves = []; // nouveau compte : aucune cuve pré-enregistrée
-  }
-  loadGlobalAlertes();
-  loadGlobalLevures();
-  loadGlobalVariables();
+async function saveGlobalVariables() {
+  await sb.from('variables_calculees').delete().neq('id', -1);
+  if (!variablesCalculees.length) return;
+  var rows = variablesCalculees.map(function(v, i){ return { nom: v.nom, formule: v.formule, ordre: i }; });
+  var r = await sb.from('variables_calculees').insert(rows).select('id');
+  if (r.error) { console.error('saveGlobalVariables:', r.error); return; }
+  r.data.forEach(function(row, i){ variablesCalculees[i].id = row.id; });
 }
 
-// ─── Login ────────────────────────────────────────────────────────────────────
-function renderLogin() {
-  var users = getUserList();
-  var list  = document.getElementById('login-user-list');
-  if (!users.length) {
-    list.innerHTML = '<div style="font-size:12px;color:var(--c-muted);text-align:center;padding:8px 0">Aucun utilisateur enregistré</div>';
-  } else {
-    list.innerHTML = users.map(function(u) {
-      var jsonU = JSON.stringify(u).replace(/'/g, "\\'");
-      return '<button class="login-user-btn" onclick=\'loginAs(' + jsonU + ')\'>👤 ' + escHtml(u) + '</button>';
-    }).join('');
-  }
+// ─── Authentification (Supabase Auth) ─────────────────────────────────────────
+function toggleAuthMode() {
+  _authMode = _authMode === 'signin' ? 'signup' : 'signin';
+  document.getElementById('auth-submit-btn').textContent = _authMode === 'signin' ? 'Se connecter' : 'Créer le compte';
+  document.getElementById('auth-toggle-sep').innerHTML = _authMode === 'signin'
+    ? 'Pas encore de compte ? <strong>Créer un compte</strong>'
+    : 'Déjà un compte ? <strong>Se connecter</strong>';
+  document.getElementById('auth-err').style.display = 'none';
+  document.getElementById('auth-info').style.display = 'none';
 }
 
-function loginAs(username) {
-  currentUser = username;
-  loadUserData(username);
-  saveUserData(); // persiste immédiatement l'état initial (démo ou données existantes)
+async function submitAuthForm() {
+  var email = document.getElementById('auth-email').value.trim();
+  var password = document.getElementById('auth-password').value;
+  var errEl = document.getElementById('auth-err');
+  var infoEl = document.getElementById('auth-info');
+  errEl.style.display = 'none';
+  infoEl.style.display = 'none';
+  if (!email || !password) { errEl.textContent = 'Email et mot de passe requis.'; errEl.style.display = 'block'; return; }
+  var btn = document.getElementById('auth-submit-btn');
+  btn.disabled = true;
+  var result = _authMode === 'signin'
+    ? await sb.auth.signInWithPassword({ email: email, password: password })
+    : await sb.auth.signUp({ email: email, password: password });
+  btn.disabled = false;
+  if (result.error) { errEl.textContent = result.error.message; errEl.style.display = 'block'; return; }
+  if (_authMode === 'signup' && !result.data.session) {
+    infoEl.textContent = 'Compte créé. Vérifiez votre boîte mail pour confirmer votre adresse, puis connectez-vous.';
+    infoEl.style.display = 'block';
+    _authMode = 'signin';
+    document.getElementById('auth-submit-btn').textContent = 'Se connecter';
+    document.getElementById('auth-toggle-sep').innerHTML = 'Pas encore de compte ? <strong>Créer un compte</strong>';
+    return;
+  }
+  await onAuthenticated(result.data.user);
+}
+
+async function onAuthenticated(user) {
+  currentUserId = user.id;
+  document.getElementById('login-form').style.display = 'none';
+  document.getElementById('login-loading').style.display = 'block';
+  var profil = await sb.from('profiles').select('display_name, is_admin').eq('id', user.id).single();
+  if (profil.error || !profil.data) {
+    document.getElementById('login-loading').style.display = 'none';
+    document.getElementById('login-form').style.display = 'block';
+    document.getElementById('auth-err').textContent = 'Profil introuvable. Réessayez dans quelques instants ou contactez un administrateur.';
+    document.getElementById('auth-err').style.display = 'block';
+    return;
+  }
+  currentUser = profil.data.display_name;
+  currentIsAdmin = !!profil.data.is_admin;
+  await Promise.all([ loadCuvesFromSupabase(), loadGlobalAlertes(), loadGlobalLevures(), loadGlobalVariables() ]);
   document.getElementById('login-overlay').style.display = 'none';
+  document.getElementById('login-loading').style.display = 'none';
   document.getElementById('user-badge').style.display = 'flex';
-  document.getElementById('user-badge').innerHTML = '👤 ' + escHtml(username);
+  document.getElementById('user-badge').innerHTML = '👤 ' + escHtml(currentUser);
   document.getElementById('btn-logout').style.display = '';
+  document.getElementById('btn-admin-settings').style.display = currentIsAdmin ? '' : 'none';
   renderAll();
 }
 
-function createUser() {
-  var name = document.getElementById('new-username').value.trim();
-  if (!name) { alert('Veuillez saisir un nom.'); return; }
-  var store = getStore();
-  store.users = store.users || [];
-  if (store.users.indexOf(name) !== -1) { loginAs(name); return; }
-  store.users.push(name);
-  saveStore(store);
-  loginAs(name);
+async function bootSession() {
+  var session = await sb.auth.getSession();
+  var user = session.data && session.data.session ? session.data.session.user : null;
+  if (user) { await onAuthenticated(user); }
 }
 
-function logout() {
-  saveUserData();
-  currentUser = null;
+function resetAuthForm() {
+  document.getElementById('auth-email').value = '';
+  document.getElementById('auth-password').value = '';
+  document.getElementById('auth-err').style.display = 'none';
+  document.getElementById('auth-info').style.display = 'none';
+  _authMode = 'signin';
+  document.getElementById('auth-submit-btn').textContent = 'Se connecter';
+  document.getElementById('auth-toggle-sep').innerHTML = 'Pas encore de compte ? <strong>Créer un compte</strong>';
+}
+
+async function logout() {
+  await sb.auth.signOut();
+  currentUser = null; currentUserId = null; currentIsAdmin = false;
   cuves = []; alertes = JSON.parse(JSON.stringify(DEFAULT_ALERTES));
   document.getElementById('login-overlay').style.display = 'flex';
   document.getElementById('user-badge').style.display = 'none';
   document.getElementById('btn-logout').style.display = 'none';
-  renderLogin();
+  document.getElementById('btn-admin-settings').style.display = 'none';
+  resetAuthForm();
+  document.getElementById('login-form').style.display = 'block';
+  document.getElementById('login-loading').style.display = 'none';
 }
 
 // ─── Panneau Paramètres (ADMIN) ───────────────────────────────────────────────
 var _currentAdminTab = 'comptes';
 
 function showAdminPanel() {
-  loadGlobalAlertes();
-  loadGlobalLevures();
-  loadGlobalVariables();
-  document.getElementById('login-overlay').style.display = 'none';
-  var panel = document.getElementById('admin-panel');
-  panel.style.display = 'block';
-  document.getElementById('admin-tabs').style.display = 'none';
-  document.getElementById('admin-auth-step').style.display = 'flex';
-  document.getElementById('admin-content-step').style.display = 'none';
-  document.getElementById('admin-code-input').value = '';
-  document.getElementById('admin-err').style.display = 'none';
-  setTimeout(function(){ document.getElementById('admin-code-input').focus(); }, 80);
-}
-function showLoginPanel() {
-  saveGlobalAlertes();
-  document.getElementById('admin-panel').style.display = 'none';
-  document.getElementById('login-overlay').style.display = 'flex';
-  renderLogin();
-}
-// Hash SHA-256 de 'ADMIN@84' — ne jamais stocker le mot de passe en clair
-// Pour changer le mot de passe : remplacez cette valeur par le SHA-256 du nouveau mot de passe
-var _ADMIN_HASH = 'e2e301dd0e5c4e3c8e5ac5eb4f2f9d0c5d0d4673446d83171848462e7057ebf9';
-
-async function _sha256(str) {
-  var buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
-  return Array.from(new Uint8Array(buf)).map(function(b){ return b.toString(16).padStart(2,'0'); }).join('');
-}
-
-async function validateAdminCode() {
-  var code = document.getElementById('admin-code-input').value;
-  var hash = await _sha256(code);
-  if (hash !== _ADMIN_HASH) {
-    document.getElementById('admin-err').style.display = 'block';
-    document.getElementById('admin-code-input').value = '';
-    document.getElementById('admin-code-input').focus();
-    return;
-  }
-  document.getElementById('admin-auth-step').style.display = 'none';
-  document.getElementById('admin-tabs').style.display = 'flex';
+  if (!currentIsAdmin) return;
+  document.getElementById('admin-panel').style.display = 'block';
   var cs = document.getElementById('admin-content-step');
-  cs.style.display = 'block';
   var adminHeader = document.querySelector('#admin-panel > div:first-child');
   var headerH = adminHeader ? adminHeader.offsetHeight : 57;
   cs.style.height = (window.innerHeight - headerH) + 'px';
   cs.style.overflowY = 'auto';
   showAdminTab(_currentAdminTab, null);
   renderAdminPanel();
+}
+function showLoginPanel() {
+  document.getElementById('admin-panel').style.display = 'none';
 }
 function showAdminTab(tab, btn) {
   _currentAdminTab = tab;
@@ -658,19 +689,13 @@ function renderAdminPanel() {
   showAdminTab(_currentAdminTab, null);
 }
 function renderAdminComptes() {
-  var users = getUserList();
   var usersEl = document.getElementById('admin-users-list');
   if (!usersEl) return;
-  usersEl.innerHTML = users.length
-    ? users.map(function(u) {
-        var safeU = escHtml(u);
-        var jsonU = JSON.stringify(u).replace(/'/g, "\\'");
-        return '<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--c-border)">'
-          + '<span style="flex:1;font-size:13px">👤 ' + safeU + '</span>'
-          + '<button class="btn btn-danger btn-sm" onclick=\'deleteUserAdmin(' + jsonU + ')\'>🗑 Supprimer</button>'
-          + '</div>';
-      }).join('')
-    : '<p style="font-size:13px;color:var(--c-muted)">Aucun compte.</p>';
+  usersEl.innerHTML = '<p style="font-size:13px;color:var(--c-muted);line-height:1.7">'
+    + 'La création, la suppression et le statut administrateur des comptes se gèrent désormais depuis le '
+    + '<a href="https://supabase.com/dashboard/project/gctvtjelleajwpcbkqqs/auth/users" target="_blank" rel="noopener">dashboard Supabase</a> '
+    + '(onglet Authentication → Users pour les comptes, table <code>profiles</code> pour le champ <code>is_admin</code>).'
+    + '</p>';
 }
 
 function renderAlertesAdmin() {
@@ -790,36 +815,9 @@ function renderConditionRow(ai, condIdx, cond) {
     + valeurHtml
     + '</div>';
 }
-function deleteUserAdmin(username) {
-  var usersEl = document.getElementById('admin-users-list');
-  var users = getUserList();
-  usersEl.innerHTML = users.map(function(u) {
-    var safeU = escHtml(u);
-    var jsonU = JSON.stringify(u).replace(/'/g, "\\'");
-    if (u === username) {
-      return '<div style="display:flex;align-items:center;gap:8px;padding:9px 10px;border-bottom:1px solid var(--c-border);background:var(--c-red);border-radius:var(--radius-md);flex-wrap:wrap">'
-        + '<span style="flex:1;font-size:13px;color:var(--c-red-text)">🗑 Supprimer <strong>' + safeU + '</strong> et toutes ses données ?</span>'
-        + '<button class="btn btn-danger btn-sm" onclick=\'confirmDeleteUserAdmin(' + jsonU + ')\'>Confirmer</button>'
-        + '<button class="btn btn-sm" onclick="renderAdminPanel()">Annuler</button>'
-        + '</div>';
-    }
-    return '<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--c-border)">'
-      + '<span style="flex:1;font-size:13px">👤 ' + safeU + '</span>'
-      + '<button class="btn btn-danger btn-sm" onclick=\'deleteUserAdmin(' + jsonU + ')\'>🗑 Supprimer</button>'
-      + '</div>';
-  }).join('');
-}
-function confirmDeleteUserAdmin(username) {
-  var store = getStore();
-  store.users = (store.users || []).filter(function(u){ return u !== username; });
-  delete store['data_' + username];
-  saveStore(store);
-  renderAdminPanel();
-}
 
 // ─── Levures (Paramètres) ──────────────────────────────────────────────────
 function renderLevuresAdmin() {
-  loadGlobalLevures();
   var el = document.getElementById('admin-levures-list');
   if (!el) return;
   var besoinOpts = ['Faible','Moyen','Élevé'];
@@ -862,7 +860,6 @@ function addGlobalLevure() {
 // ─── Moteur de formules (variables calculées type Excel) ────────────────────
 // Variables de base disponibles dans toute formule, dérivées d'une cuve
 function getBaseFormulaVars(c) {
-  loadGlobalLevures();
   var calc  = calcVitesse(c.mesures);
   var last  = calc.length ? calc[calc.length - 1] : null;
   var vits  = calc.filter(function(m, i){ return i > 0; });
@@ -1018,7 +1015,6 @@ function parseComparaison(s, pos, depth) {
 
 // Calcule la valeur de toutes les variables calculées pour une cuve donnée, dans l'ordre de définition
 function computeVariablesForCuve(c) {
-  loadGlobalVariables();
   var vars = getBaseFormulaVars(c);
   var results = {};
   variablesCalculees.forEach(function(v) {
@@ -1032,7 +1028,6 @@ function computeVariablesForCuve(c) {
 }
 
 function renderVariablesAdmin() {
-  loadGlobalVariables();
   var el = document.getElementById('admin-variables-list');
   if (!el) return;
   if (!variablesCalculees.length) {
@@ -1067,7 +1062,6 @@ function getFormulaSuggestions() {
     { nom: 'BesoinAzoteLevure', desc: 'Besoin azote levure (0=Faible, 1=Moyen, 2=Élevé)' },
     { nom: 'SI(', desc: 'SI(condition;valeur_vraie;valeur_fausse)' }
   ];
-  loadGlobalVariables();
   var calcVars = variablesCalculees
     .filter(function(v){ return v.nom && v.nom.trim(); })
     .map(function(v){ return { nom: v.nom, desc: 'Variable calculée' + (v.unite ? ' (' + v.unite + ')' : '') }; });
@@ -1126,7 +1120,6 @@ function insertFormulaSuggestion(vi, suggestionNom) {
   input.setSelectionRange(newPos, newPos);
   if (box) box.style.display = 'none';
   // Met à jour le modèle en mémoire sans relancer un rendu complet (qui ferait perdre le focus)
-  loadGlobalVariables();
   if (variablesCalculees[vi]) {
     variablesCalculees[vi].formule = newVal;
     saveGlobalVariables();
@@ -1145,7 +1138,6 @@ function hideFormulaHelpDelayed() {
 
 // ─── Aide à la frappe pour les messages d'alerte (insère {Variable} et {Variable:unite}) ──
 function getMessageSuggestions() {
-  loadGlobalVariables();
   var suggestions = [];
   variablesCalculees
     .filter(function(v){ return v.nom && v.nom.trim(); })
@@ -1213,7 +1205,6 @@ function insertMessageSuggestion(ai, token) {
   input.focus();
   input.setSelectionRange(newPos, newPos);
   if (box) box.style.display = 'none';
-  loadGlobalAlertes();
   if (alertes[ai]) {
     alertes[ai].message = newVal;
     saveGlobalAlertes();
@@ -1221,7 +1212,6 @@ function insertMessageSuggestion(ai, token) {
 }
 
 function addGlobalVariable() {
-  loadGlobalVariables();
   variablesCalculees.push({ id: Date.now(), nom: 'NouvelleVariable', formule: '', unite: '' });
   saveGlobalVariables();
   renderVariablesAdmin();
@@ -1231,14 +1221,12 @@ function updateVariableSilent(vi, field, val) {
   if (variablesCalculees[vi]) { variablesCalculees[vi][field] = val; saveGlobalVariables(); }
 }
 function updateVariable(vi, field, val) {
-  loadGlobalVariables();
   if (variablesCalculees[vi]) { variablesCalculees[vi][field] = val; }
   saveGlobalVariables();
   renderVariablesAdmin();
   refreshOtherViews();
 }
 function deleteVariable(vi) {
-  loadGlobalVariables();
   variablesCalculees.splice(vi, 1);
   saveGlobalVariables();
   renderVariablesAdmin();
@@ -1370,7 +1358,6 @@ var CONDITION_CHAMPS_BASE = [
 ];
 // Retourne la liste complète des champs disponibles : champs de base + variables calculées (préfixées var:) + état d'acquittement des alertes (préfixé alerte:)
 function getConditionChamps() {
-  loadGlobalVariables();
   // Ne pas recharger alertes ici - déjà en mémoire, et ce rechargement écrase les modifications en cours
   var varChamps = variablesCalculees.map(function(v) {
     return { value: 'var:' + v.nom, label: v.nom + ' (calculée)', unite: v.unite || '', kind: 'number' };
@@ -1461,7 +1448,6 @@ function getAlerteConditions(a) {
 // Remplace {NomVariable} et {NomVariable:unite} dans un message par la valeur calculée pour cette cuve
 function resolveAlertMessage(message, c) {
   if (!message || message.indexOf('{') === -1) return message;
-  loadGlobalVariables();
   var computedVars = computeVariablesForCuve(c);
   var varsByName = {};
   variablesCalculees.forEach(function(v){ varsByName[v.nom] = v; });
@@ -1585,7 +1571,7 @@ function toggleAlerteAcquittement(ci, alerteId, checked) {
   } else {
     if (idx !== -1) list.splice(idx, 1);
   }
-  saveUserData();
+  sbSync(sb.from('cuves').update({ alertes_validees: list }).eq('id', c._id), 'toggleAlerteAcquittement');
   refreshOtherViews();
 }
 
@@ -1641,7 +1627,6 @@ function addCuve() {
   document.getElementById('nc-tap').value = '';
   document.getElementById('nc-azote').value = '';
   document.getElementById('nc-nom-suggestion').style.display = 'none';
-  loadGlobalLevures();
   var levureSel = document.getElementById('nc-levure');
   var opts = '<option value="">—</option>' + levures.map(function(l){
     return '<option value="' + escHtml(l.nom) + '">' + escHtml(l.nom) + ' (besoin azote : ' + l.besoinAzote + ')</option>';
@@ -1680,14 +1665,21 @@ function confirmAddCuve() {
     if (dEl || tEl) savedValues[ci] = { dens: dEl ? dEl.value : '', temp: tEl ? tEl.value : '' };
   });
 
-  cuves.push({
-    nom: nom, mesures: [], active: true,
+  var nouvelleCuve = {
+    _id: null, nom: nom, mesures: [], active: true,
     appellation: '', couleur: '', qualite: '',
     tap: tap !== '' && !isNaN(parseDecimal(tap)) ? parseDecimal(tap) : null,
     azoteAssimilable: azote !== '' && !isNaN(parseDecimal(azote)) ? parseDecimal(azote) : null,
     levure: levureNom || ''
+  };
+  cuves.push(nouvelleCuve);
+  sb.from('cuves').insert({
+    user_id: currentUserId, nom: nouvelleCuve.nom,
+    tap: nouvelleCuve.tap, azote_assimilable: nouvelleCuve.azoteAssimilable, levure: nouvelleCuve.levure
+  }).select('id').single().then(function(r) {
+    if (r.error) { console.error('confirmAddCuve:', r.error); alert('Échec de la création de la cuve : ' + r.error.message); return; }
+    nouvelleCuve._id = r.data.id;
   });
-  saveUserData();
   closeNewCuveModal();
   renderSaisieRapide();
   // Restaurer les valeurs
@@ -1703,12 +1695,16 @@ function confirmAddCuve() {
   
   renderGraphiques();
 }
+// Traduit un champ local (camelCase) vers sa colonne Supabase (snake_case) pour les mises à jour de cuve
+var CUVE_FIELD_TO_COLUMN = { appellation: 'appellation', couleur: 'couleur', qualite: 'qualite', tap: 'tap', azoteAssimilable: 'azote_assimilable', levure: 'levure', nom: 'nom' };
+
 function removeCuve(i) {
   if (!confirm('Supprimer "' + cuves[i].nom + '" et toutes ses mesures ?')) return;
+  var id = cuves[i]._id;
   cuves.splice(i, 1);
   if (activeGraphCuve >= cuves.length) activeGraphCuve = Math.max(0, cuves.length - 1);
   if (activeTableCuve >= cuves.length) activeTableCuve = Math.max(0, cuves.length - 1);
-  saveUserData();
+  if (id) sbSync(sb.from('cuves').delete().eq('id', id), 'removeCuve');
   renderAll();
 }
 // Retire la cuve de la saisie rapide sans supprimer ses données
@@ -1717,7 +1713,7 @@ function archiveCuve(i) {
   // Date de fin = dernière mesure de la cuve (pas la date du jour)
   var mesures = cuves[i].mesures || [];
   cuves[i].dateArchive = mesures.length ? mesures[mesures.length-1].date : new Date().toISOString().slice(0,10);
-  saveUserData();
+  if (cuves[i]._id) sbSync(sb.from('cuves').update({ archived: true, date_archive: cuves[i].dateArchive }).eq('id', cuves[i]._id), 'archiveCuve');
   renderSaisieRapide();
   renderDetail();
   renderTableauResume();
@@ -1727,7 +1723,7 @@ function archiveCuveDetail(i) {
   var mesures = cuves[i].mesures || [];
   cuves[i].archived = true;
   cuves[i].dateArchive = mesures.length ? mesures[mesures.length-1].date : new Date().toISOString().slice(0,10);
-  saveUserData();
+  if (cuves[i]._id) sbSync(sb.from('cuves').update({ archived: true, date_archive: cuves[i].dateArchive }).eq('id', cuves[i]._id), 'archiveCuveDetail');
   renderSaisieRapide();
   renderDetail();
   renderTableauResume();
@@ -1740,12 +1736,16 @@ function archiveCuveDetail(i) {
 function unarchiveCuve(i) {
   cuves[i].archived = false;
   delete cuves[i].dateArchive;
-  saveUserData();
+  if (cuves[i]._id) sbSync(sb.from('cuves').update({ archived: false, date_archive: null }).eq('id', cuves[i]._id), 'unarchiveCuve');
   renderAll();
 }
 function updateCuveInfo(ci, field, val) {
   cuves[ci][field] = val;
-  saveUserData();
+  var col = CUVE_FIELD_TO_COLUMN[field];
+  if (col && cuves[ci]._id) {
+    var payload = {}; payload[col] = val;
+    sbSync(sb.from('cuves').update(payload).eq('id', cuves[ci]._id), 'updateCuveInfo');
+  }
   refreshOtherViews();
 }
 function onQualiteChange(ci, val) {
@@ -1759,12 +1759,12 @@ function onQualiteChange(ci, val) {
     wrap.style.display = 'none';
     cuves[ci].qualite = val;
   }
-  saveUserData();
+  if (cuves[ci]._id) sbSync(sb.from('cuves').update({ qualite: cuves[ci].qualite }).eq('id', cuves[ci]._id), 'onQualiteChange');
   refreshOtherViews();
 }
 function renameCuve(i, val) {
   cuves[i].nom = val;
-  saveUserData();
+  if (cuves[i]._id) sbSync(sb.from('cuves').update({ nom: val }).eq('id', cuves[i]._id), 'renameCuve');
   refreshOtherViews();
 }
 function addMesure(ci) {
@@ -1772,19 +1772,21 @@ function addMesure(ci) {
   var densite = parseDecimal(document.getElementById('inp-dens-' + ci).value);
   var temp    = parseDecimal(document.getElementById('inp-temp-' + ci).value);
   if (!date || isNaN(densite) || isNaN(temp)) { alert('Remplissez tous les champs.'); return; }
+  cuves[ci].mesures = cuves[ci].mesures.filter(function(m){ return m.date !== date; });
   cuves[ci].mesures.push({ date: date, densite: densite, temperature: temp });
   cuves[ci].mesures.sort(function(a,b){ return a.date.localeCompare(b.date); });
-  saveUserData();
+  if (cuves[ci]._id) sbSync(sb.from('mesures').upsert({ cuve_id: cuves[ci]._id, date: date, densite: densite, temperature: temp }, { onConflict: 'cuve_id,date' }), 'addMesure');
   renderAll();
 }
 function removeMesureDate(ci, date) {
   cuves[ci].mesures = cuves[ci].mesures.filter(function(m){ return m.date !== date; });
-  saveUserData();
+  if (cuves[ci]._id) sbSync(sb.from('mesures').delete().eq('cuve_id', cuves[ci]._id).eq('date', date), 'removeMesureDate');
   renderAll();
 }
 function removeMesure(ci, mi) {
+  var date = cuves[ci].mesures[mi] ? cuves[ci].mesures[mi].date : null;
   cuves[ci].mesures.splice(mi, 1);
-  saveUserData();
+  if (date && cuves[ci]._id) sbSync(sb.from('mesures').delete().eq('cuve_id', cuves[ci]._id).eq('date', date), 'removeMesure');
   renderAll();
 }
 
@@ -1831,6 +1833,7 @@ function saveSaisieRapide() {
   var date = document.getElementById('saisie-date').value;
   if (!date) { alert('Sélectionnez une date.'); return; }
   var count = 0;
+  var rows = [];
   cuves.forEach(function(c, ci) {
     var densEl = document.getElementById('sr-dens-' + ci);
     var tempEl = document.getElementById('sr-temp-' + ci);
@@ -1844,9 +1847,10 @@ function saveSaisieRapide() {
       c.mesures.sort(function(a,b){ return a.date.localeCompare(b.date); });
       densEl.value = ''; tempEl.value = '';
       count++;
+      if (c._id) rows.push({ cuve_id: c._id, date: date, densite: dens, temperature: temp });
     }
   });
-  saveUserData();
+  if (rows.length) sbSync(sb.from('mesures').upsert(rows, { onConflict: 'cuve_id,date' }), 'saveSaisieRapide');
   refreshOtherViews();
   renderSaisieRapide();
   var fb = document.getElementById('saisie-feedback');
@@ -1980,7 +1984,6 @@ function renderDetail() {
       return '<option value="' + opt + '"' + (opt === c.couleur ? ' selected' : '') + '>' + (opt || '—') + '</option>';
     }).join('');
 
-    loadGlobalLevures();
     var levureOpts = ['<option value="">—</option>'].concat(levures.map(function(l){
       return '<option value="' + escHtml(l.nom) + '"' + (l.nom===c.levure?' selected':'') + '>' + escHtml(l.nom) + ' (besoin azote : ' + l.besoinAzote + ')</option>';
     })).join('');
@@ -1997,7 +2000,6 @@ function renderDetail() {
       + '<div><label>Levure utilisée</label><select onchange="updateCuveInfo(' + ci + ',\'levure\',this.value)">' + levureOpts + '</select></div>'
       + '</div>';
 
-    loadGlobalVariables();
     var computedVars = variablesCalculees.length ? computeVariablesForCuve(c) : {};
     var visibleVariables = variablesCalculees.filter(function(v){ return v.visible !== false; });
     var varsBlock = visibleVariables.length
@@ -2753,18 +2755,14 @@ function loadDemo() {
 
 // ─── Init ──────────────────────────────────────────────────────────────────────
 window.addEventListener('DOMContentLoaded', function() {
-  // Charger les données globales dès le démarrage (alertes, levures, variables)
-  loadGlobalAlertes();
-  loadGlobalLevures();
-  loadGlobalVariables();
-  renderLogin();
   document.getElementById('login-overlay').style.display = 'flex';
-  document.getElementById('new-username').addEventListener('keydown', function(e){
-    if (e.key === 'Enter') createUser();
+  bootSession(); // restaure la session Supabase existante, sinon laisse le formulaire de connexion affiché
+  document.getElementById('auth-password').addEventListener('keydown', function(e){
+    if (e.key === 'Enter') submitAuthForm();
   });
-  document.getElementById('admin-code-input').addEventListener('keydown', function(e){
-    if (e.key === 'Enter') validateAdminCode();
-    if (e.key === 'Escape') showLoginPanel();
+  // Écoute les changements de session (connexion/déconnexion depuis un autre onglet)
+  sb.auth.onAuthStateChange(function(event) {
+    if (event === 'SIGNED_OUT' && currentUserId) { logout(); }
   });
   // Calcule la hauteur du sticky header pour positionner la barre de raccourcis cuves
   function updateStickyOffset() {
