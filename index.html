@@ -189,6 +189,7 @@
   body.mobile-lite .btn { padding: 10px 16px; font-size: 14px; }
   body.mobile-lite .header-title { font-size: 15px; }
   body.mobile-lite .header-sub { display: none; }
+  #btn-voice.listening { background: var(--c-red); color: var(--c-red-text); border-color: #f09595; }
 </style>
 </head>
 <body>
@@ -329,6 +330,10 @@
           <label>Date de saisie (pour toutes les cuves)</label>
           <input type="date" id="saisie-date" value="">
         </div>
+      </div>
+      <div id="voice-input-block" style="display:none;margin-bottom:14px">
+        <button class="btn" id="btn-voice" onclick="startVoiceCapture()" style="width:100%">🎤 Saisie vocale (Cuve, Densité, Température)</button>
+        <div id="voice-feedback" style="font-size:12px;color:var(--c-muted);margin-top:6px;min-height:16px"></div>
       </div>
       <div class="table-wrap">
         <table class="saisie-table">
@@ -2764,6 +2769,109 @@ function toggleLayoutMode() {
   if (sessionStorage.getItem('forceFullView') === '1') sessionStorage.removeItem('forceFullView');
   else sessionStorage.setItem('forceFullView', '1');
   applyLayoutMode();
+  updateVoiceButtonVisibility();
+}
+
+// ─── Saisie vocale (Android — Web Speech API) ─────────────────────────────────
+var _voiceSupported = !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+var _recognition = null;
+
+function updateVoiceButtonVisibility() {
+  var block = document.getElementById('voice-input-block');
+  if (block) block.style.display = (_voiceSupported && isMobileLite()) ? '' : 'none';
+}
+
+function normalizeForVoiceMatch(s) {
+  return (s || '').toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+// Cherche, parmi les cuves actives, celle dont le nom apparaît (normalisé) dans le texte reconnu.
+// En cas de plusieurs correspondances, garde la plus longue (la plus spécifique).
+function findCuveByVoice(transcript) {
+  var norm = normalizeForVoiceMatch(transcript);
+  var best = null, bestLen = 0;
+  cuves.filter(function(c){ return !c.archived; }).forEach(function(c) {
+    var cn = normalizeForVoiceMatch(c.nom);
+    if (cn && norm.indexOf(cn) !== -1 && cn.length > bestLen) { best = c; bestLen = cn.length; }
+  });
+  return best;
+}
+
+function extractVoiceNumber(transcript, keywordsPattern) {
+  var re = new RegExp('(?:' + keywordsPattern + ')\\D{0,10}(-?\\d+(?:[.,]\\d+)?)', 'i');
+  var m = transcript.match(re);
+  return m ? m[1] : null;
+}
+
+// Un densité dite "1080" (sans virgule) est en pratique 1,080 g/cm³ pour du moût/vin
+function parseVoiceDensite(raw) {
+  if (raw === null) return null;
+  var val = parseDecimal(raw);
+  if (isNaN(val)) return null;
+  if (!/[.,]/.test(raw) && val > 100) val = val / 1000;
+  return val;
+}
+
+function handleVoiceResult(transcript) {
+  var fb = document.getElementById('voice-feedback');
+  var cuve = findCuveByVoice(transcript);
+  var densRaw = extractVoiceNumber(transcript, 'densit[eé]');
+  var tempRaw = extractVoiceNumber(transcript, 'temp[eé]rature|degr[eé]s?');
+  if (!cuve) {
+    fb.textContent = '🎤 « ' + transcript + ' » — cuve non reconnue, complétez manuellement ci-dessous.';
+    return;
+  }
+  var ci = cuves.indexOf(cuve);
+  var dEl = document.getElementById('sr-dens-' + ci);
+  var tEl = document.getElementById('sr-temp-' + ci);
+  var parts = [];
+  if (densRaw !== null && dEl) {
+    var d = parseVoiceDensite(densRaw);
+    if (d !== null) { dEl.value = fmtDecimal(d, 3); parts.push('densité ' + fmtDecimal(d, 3)); }
+  }
+  if (tempRaw !== null && tEl) {
+    var t = parseDecimal(tempRaw);
+    if (!isNaN(t)) { tEl.value = fmtDecimal(t, 1); parts.push('température ' + fmtDecimal(t, 1)); }
+  }
+  if (!parts.length) {
+    fb.textContent = '🎤 Cuve « ' + cuve.nom + ' » reconnue, mais densité/température non comprises — complétez manuellement ci-dessous.';
+  } else {
+    fb.textContent = '🎤 ' + cuve.nom + ' : ' + parts.join(', ') + ' — vérifiez puis cliquez sur Enregistrer.';
+  }
+  if (dEl) { dEl.scrollIntoView({ behavior: 'smooth', block: 'center' }); dEl.focus(); }
+}
+
+function startVoiceCapture() {
+  var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) return;
+  var fb  = document.getElementById('voice-feedback');
+  var btn = document.getElementById('btn-voice');
+  if (_recognition) { _recognition.stop(); return; }
+  _recognition = new SR();
+  _recognition.lang = 'fr-FR';
+  _recognition.interimResults = true;
+  _recognition.maxAlternatives = 1;
+  btn.classList.add('listening');
+  fb.textContent = '🎤 Écoute en cours… ex : « Cuve 12, densité 1080, température 20 »';
+  _recognition.onresult = function(e) {
+    var transcript = '';
+    for (var i = 0; i < e.results.length; i++) transcript += e.results[i][0].transcript;
+    if (e.results[e.results.length - 1].isFinal) {
+      handleVoiceResult(transcript);
+    } else {
+      fb.textContent = '🎤 ' + transcript;
+    }
+  };
+  _recognition.onerror = function(e) {
+    fb.textContent = 'Erreur de reconnaissance vocale (' + e.error + '). Réessayez ou saisissez manuellement.';
+  };
+  _recognition.onend = function() {
+    btn.classList.remove('listening');
+    _recognition = null;
+  };
+  _recognition.start();
 }
 
 function showView(name, tab) {
@@ -2816,10 +2924,11 @@ window.addEventListener('DOMContentLoaded', function() {
   document.getElementById('login-overlay').style.display = 'flex';
   bootSession(); // restaure la session Supabase existante, sinon laisse le formulaire de connexion affiché
   applyLayoutMode();
+  updateVoiceButtonVisibility();
   var _layoutResizeTimer = null;
   window.addEventListener('resize', function() {
     clearTimeout(_layoutResizeTimer);
-    _layoutResizeTimer = setTimeout(applyLayoutMode, 200);
+    _layoutResizeTimer = setTimeout(function(){ applyLayoutMode(); updateVoiceButtonVisibility(); }, 200);
   });
   document.getElementById('auth-password').addEventListener('keydown', function(e){
     if (e.key === 'Enter') submitAuthForm();
