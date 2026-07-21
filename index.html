@@ -4,9 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Suivi de fermentation</title>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.1/dist/jspdf.plugin.autotable.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -185,6 +182,13 @@
   .login-user-row .login-user-btn { flex: 1; }
   .btn-del-user { flex-shrink: 0; padding: 6px 10px; font-size: 12px; background: var(--c-red); color: var(--c-red-text); border: 1px solid #f09595; border-radius: var(--radius-md); cursor: pointer; font-family: var(--font); }
   .btn-del-user:hover { background: #f5c6c6; }
+
+  /* Vue mobile allégée : cibles tactiles plus grandes sur la Saisie rapide */
+  body.mobile-lite .saisie-table input[type="text"] { padding: 10px 10px; font-size: 16px; }
+  body.mobile-lite .saisie-table td, body.mobile-lite .saisie-table th { padding: 10px 8px; }
+  body.mobile-lite .btn { padding: 10px 16px; font-size: 14px; }
+  body.mobile-lite .header-title { font-size: 15px; }
+  body.mobile-lite .header-sub { display: none; }
 </style>
 </head>
 <body>
@@ -308,6 +312,9 @@
     <button class="nav-tab" onclick="showView('tableaux',this)">Dernières Mesures</button>
     <button class="nav-tab" onclick="showView('detail',this)">Détail cuves</button>
     <button class="nav-tab" onclick="showView('graphiques',this)">Graphiques</button>
+  </div>
+  <div style="text-align:right;padding:4px 0">
+    <a href="#" id="layout-toggle-link" onclick="toggleLayoutMode();return false;" style="display:none;font-size:11px;color:var(--c-muted)"></a>
   </div>
   </div><!-- /.sticky-top -->
 
@@ -487,6 +494,28 @@ function sbSync(promise, label) {
 var currentUserId = null;   // uuid Supabase (auth.users.id)
 var currentIsAdmin = false;
 var _authMode = 'signin';   // 'signin' | 'signup'
+
+// ─── Chargement différé de Chart.js / jsPDF (pas nécessaires en mode mobile allégé) ──
+var _scriptPromises = {};
+function loadScriptOnce(src) {
+  if (!_scriptPromises[src]) {
+    _scriptPromises[src] = new Promise(function(resolve, reject) {
+      var s = document.createElement('script');
+      s.src = src;
+      s.onload = resolve;
+      s.onerror = function(){ delete _scriptPromises[src]; reject(new Error('Échec de chargement : ' + src)); };
+      document.head.appendChild(s);
+    });
+  }
+  return _scriptPromises[src];
+}
+function ensureChartsLoaded() {
+  return loadScriptOnce('https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js');
+}
+function ensurePdfLoaded() {
+  return loadScriptOnce('https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js')
+    .then(function(){ return loadScriptOnce('https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.1/dist/jspdf.plugin.autotable.min.js'); });
+}
 
 // ─── Persistance : cuves / mesures (privées, écriture ciblée par mutation) ───
 function mapSupabaseCuve(c) {
@@ -1689,11 +1718,12 @@ function confirmAddCuve() {
     if (dEl) dEl.value = savedValues[ci].dens;
     if (tEl) tEl.value = savedValues[ci].temp;
   });
-  // Rafraîchir les autres vues sans toucher à la saisie rapide
-  renderDetail();
-  renderTableauResume();
-  
-  renderGraphiques();
+  // Rafraîchir les autres vues sans toucher à la saisie rapide (inutile en mobile allégé)
+  if (!isMobileLite()) {
+    renderDetail();
+    renderTableauResume();
+    renderGraphiques();
+  }
 }
 // Traduit un champ local (camelCase) vers sa colonne Supabase (snake_case) pour les mises à jour de cuve
 var CUVE_FIELD_TO_COLUMN = { appellation: 'appellation', couleur: 'couleur', qualite: 'qualite', tap: 'tap', azoteAssimilable: 'azote_assimilable', levure: 'levure', nom: 'nom' };
@@ -1715,9 +1745,11 @@ function archiveCuve(i) {
   cuves[i].dateArchive = mesures.length ? mesures[mesures.length-1].date : new Date().toISOString().slice(0,10);
   if (cuves[i]._id) sbSync(sb.from('cuves').update({ archived: true, date_archive: cuves[i].dateArchive }).eq('id', cuves[i]._id), 'archiveCuve');
   renderSaisieRapide();
-  renderDetail();
-  renderTableauResume();
-  renderGraphiques();
+  if (!isMobileLite()) {
+    renderDetail();
+    renderTableauResume();
+    renderGraphiques();
+  }
 }
 function archiveCuveDetail(i) {
   var mesures = cuves[i].mesures || [];
@@ -2183,7 +2215,8 @@ function exportCSV() {
   document.body.removeChild(a); URL.revokeObjectURL(url);
 }
 
-function exportPDF() {
+async function exportPDF() {
+  try { await ensurePdfLoaded(); } catch (e) {}
   if (!window.jspdf) { alert('La bibliothèque PDF n\'a pas pu se charger. Vérifiez votre connexion internet.'); return; }
   var cuvesExport = getExportCuves();
   if (!cuvesExport.length) { alert('Aucune cuve active à exporter.'); return; }
@@ -2459,12 +2492,13 @@ function metric(label, val, unit) {
 }
 function setGraphCuve(i) { activeGraphCuve = i; renderGraphiques(); }
 
-function drawCharts(labels, vitesses, temps, color, vitesseThresholds, tempThresholds, travaux) {
-  if (chartVitesse) { chartVitesse.destroy(); chartVitesse = null; }
-  if (chartTemp)    { chartTemp.destroy();    chartTemp    = null; }
+async function drawCharts(labels, vitesses, temps, color, vitesseThresholds, tempThresholds, travaux) {
   var cv = document.getElementById('chart-vitesse');
   var ct = document.getElementById('chart-temp');
   if (!cv || !ct) return;
+  await ensureChartsLoaded();
+  if (chartVitesse) { chartVitesse.destroy(); chartVitesse = null; }
+  if (chartTemp)    { chartTemp.destroy();    chartTemp    = null; }
 
   var threshColors = { warn: '#e09f3e', crit: '#c0392b', info: '#2980b9' };
   travaux = travaux || [];
@@ -2694,18 +2728,42 @@ function fmtDecimal(num, digits) {
 
 function renderAll() {
   renderSaisieRapide();
+  if (isMobileLite()) return; // vues desktop non affichées : inutile de les calculer/charger Chart.js
   renderDetail();
   renderTableauResume();
-  
   renderGraphiques();
 }
 
 function refreshOtherViews() {
   renderSaisieRapide();
+  if (isMobileLite()) return;
   renderDetail();
   renderTableauResume();
-  
   renderGraphiques();
+}
+
+// ─── Vue mobile allégée ────────────────────────────────────────────────────────
+var MOBILE_BREAKPOINT = 700;
+function isMobileLite() {
+  return window.matchMedia('(max-width: ' + MOBILE_BREAKPOINT + 'px)').matches && sessionStorage.getItem('forceFullView') !== '1';
+}
+function applyLayoutMode() {
+  var viewportIsMobile = window.matchMedia('(max-width: ' + MOBILE_BREAKPOINT + 'px)').matches;
+  var mobile = isMobileLite();
+  document.body.classList.toggle('mobile-lite', mobile);
+  var navTabs = document.querySelectorAll('.nav .nav-tab');
+  navTabs.forEach(function(btn, i){ if (i > 0) btn.style.display = mobile ? 'none' : ''; });
+  var linkEl = document.getElementById('layout-toggle-link');
+  if (linkEl) {
+    linkEl.style.display = viewportIsMobile ? '' : 'none';
+    linkEl.textContent = mobile ? 'Voir la version complète' : 'Revenir à la vue mobile';
+  }
+  if (mobile) { showView('saisie', navTabs[0]); }
+}
+function toggleLayoutMode() {
+  if (sessionStorage.getItem('forceFullView') === '1') sessionStorage.removeItem('forceFullView');
+  else sessionStorage.setItem('forceFullView', '1');
+  applyLayoutMode();
 }
 
 function showView(name, tab) {
@@ -2757,6 +2815,12 @@ function loadDemo() {
 window.addEventListener('DOMContentLoaded', function() {
   document.getElementById('login-overlay').style.display = 'flex';
   bootSession(); // restaure la session Supabase existante, sinon laisse le formulaire de connexion affiché
+  applyLayoutMode();
+  var _layoutResizeTimer = null;
+  window.addEventListener('resize', function() {
+    clearTimeout(_layoutResizeTimer);
+    _layoutResizeTimer = setTimeout(applyLayoutMode, 200);
+  });
   document.getElementById('auth-password').addEventListener('keydown', function(e){
     if (e.key === 'Enter') submitAuthForm();
   });
