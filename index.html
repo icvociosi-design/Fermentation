@@ -2,9 +2,8 @@
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Suivi de fermentation</title>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.1/dist/jspdf.plugin.autotable.min.js"></script>
@@ -171,36 +170,6 @@
     .grid-2 { grid-template-columns: 1fr; }
   }
 
-  /* ── Interface mobile ── */
-  #app-desktop { display: block; }
-  #app-mobile  { display: none; }
-  @media (max-width: 768px) {
-    #app-desktop { display: none; }
-    #app-mobile  { display: block; }
-  }
-  .mobile-wrap { padding: 16px; max-width: 480px; margin: 0 auto; }
-  .mobile-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
-  .mobile-title { font-size: 16px; font-weight: 700; }
-  .mobile-card { background: var(--c-surface); border-radius: var(--radius-lg); padding: 16px; margin-bottom: 14px; }
-  .mobile-card h3 { font-size: 13px; font-weight: 600; color: var(--c-muted); text-transform: uppercase; margin-bottom: 12px; }
-
-  /* Bouton saisie vocale */
-  .btn-voice { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; padding: 14px; font-size: 15px; font-weight: 600; background: var(--c-green); color: #fff; border: none; border-radius: var(--radius-lg); cursor: pointer; font-family: var(--font); transition: background .15s; }
-  .btn-voice:hover { background: #2d4422; }
-  .btn-voice.listening { background: #c0392b; animation: pulse 1s infinite; }
-  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.6} }
-  .voice-feedback { margin-top: 10px; padding: 10px 12px; background: #fff; border-radius: var(--radius-md); border: 1px solid var(--c-border); font-size: 13px; min-height: 40px; color: var(--c-muted); }
-  .voice-feedback.ok { border-color: var(--c-green); color: var(--c-green-text); }
-  .voice-feedback.error { border-color: #e74c3c; color: #c0392b; }
-
-  /* Login Supabase */
-  .sb-login-box { background: #fff; border-radius: var(--radius-lg); padding: 32px 36px; width: min(420px, 90vw); box-shadow: 0 8px 32px rgba(0,0,0,.18); }
-  .sb-login-box input { width: 100%; margin-bottom: 12px; }
-  .sb-error { font-size: 12px; color: var(--c-red-text); margin-bottom: 10px; display: none; padding: 8px 10px; background: var(--c-red); border-radius: var(--radius-sm); }
-  .sb-loading { display: flex; align-items: center; justify-content: center; gap: 10px; font-size: 13px; color: var(--c-muted); }
-  .sb-spinner { width: 18px; height: 18px; border: 2px solid var(--c-border); border-top-color: var(--c-green); border-radius: 50%; animation: spin .7s linear infinite; }
-  @keyframes spin { to { transform: rotate(360deg); } }
-
   /* Admin delete modal */
   .admin-modal { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: flex; align-items: center; justify-content: center; z-index: 1100; }
   .admin-box { background: #fff; border-radius: var(--radius-lg); padding: 24px 28px; min-width: 280px; box-shadow: 0 8px 32px rgba(0,0,0,.22); }
@@ -221,27 +190,20 @@
 
 <!-- ── Login overlay ────────────────────────────────────────────────────── -->
 <div id="login-overlay" class="login-overlay">
-  <div class="sb-login-box">
-    <!-- État chargement initial -->
-    <div id="login-loading" class="sb-loading">
-      <div class="sb-spinner"></div> Connexion en cours…
+  <!-- Panneau principal de login -->
+  <div id="login-panel" class="login-box">
+    <div class="login-title">🍷 Suivi de fermentation</div>
+    <div class="login-sub">Identifiez-vous pour retrouver vos données</div>
+    <div id="login-user-list" class="login-users"></div>
+    <div class="login-sep">ou créer un compte</div>
+    <div class="login-new">
+      <input type="text" id="new-username" placeholder="Nouveau nom d'utilisateur" maxlength="40">
+      <button class="btn btn-primary" onclick="createUser()">Créer ou Charger</button>
     </div>
-    <!-- Formulaire login -->
-    <div id="login-form" style="display:none">
-      <div class="login-title">🍷 Suivi de fermentation</div>
-      <div class="login-sub" style="margin-bottom:20px">Connectez-vous à votre compte</div>
-      <label style="font-size:12px;font-weight:600;color:var(--c-muted)">Email</label>
-      <input type="email" id="sb-email" placeholder="votre@email.com" autocomplete="email" style="margin-top:4px">
-      <label style="font-size:12px;font-weight:600;color:var(--c-muted)">Mot de passe</label>
-      <input type="password" id="sb-password" placeholder="••••••••" autocomplete="current-password" style="margin-top:4px">
-      <div id="sb-error" class="sb-error"></div>
-      <button class="btn btn-primary" onclick="sbLogin()" style="width:100%;margin-bottom:12px">Se connecter</button>
-      <div style="text-align:right">
-        <button class="btn btn-sm" onclick="showAdminPanel()">⚙ Paramètres admin</button>
-      </div>
+    <div style="margin-top:14px;text-align:right">
+      <button class="btn btn-sm" onclick="showAdminPanel()">⚙ Paramètres</button>
     </div>
   </div>
-</div>
 </div>
 
 <!-- ── Panneau Paramètres plein écran (hors overlay) ──────────────────────── -->
@@ -329,7 +291,6 @@
 <div id="formula-help-box" style="display:none;position:fixed;background:#fff;border:1px solid var(--c-border);border-radius:var(--radius-sm);box-shadow:0 4px 14px rgba(0,0,0,.15);max-height:220px;overflow-y:auto;z-index:2000;min-width:220px"></div>
 
 
-<div id="app-desktop">
 <div class="app">
 
   <!-- Sticky header + nav -->
@@ -2792,478 +2753,30 @@ function loadDemo() {
 
 // ─── Init ──────────────────────────────────────────────────────────────────────
 window.addEventListener('DOMContentLoaded', function() {
-  // Compatibilité : renderLogin devient no-op, géré par Supabase
-});
-</script>
-
-</div><!-- /#app-desktop -->
-
-<!-- ── Interface mobile ─────────────────────────────────────────────────── -->
-<div id="app-mobile" style="display:none">
-  <div class="mobile-wrap">
-    <div class="mobile-header">
-      <span class="mobile-title">🍷 Fermentation</span>
-      <div style="display:flex;gap:8px;align-items:center">
-        <span id="mobile-user-badge" style="font-size:12px;color:var(--c-muted)"></span>
-        <button class="btn btn-sm" onclick="sbLogout()">Déconnexion</button>
-      </div>
-    </div>
-
-    <!-- Saisie vocale -->
-    <div class="mobile-card">
-      <h3>🎤 Saisie vocale</h3>
-      <div style="font-size:12px;color:var(--c-muted);margin-bottom:12px">
-        Dites par exemple : <em>« Cuve 12, densité 1080, température 20 »</em>
-      </div>
-      <button class="btn-voice" id="btn-voice" onclick="startVoice()">
-        🎤 Appuyer et parler
-      </button>
-      <div id="voice-feedback" class="voice-feedback">En attente de saisie vocale…</div>
-      <div id="voice-form" style="display:none;margin-top:14px">
-        <div style="display:grid;gap:10px">
-          <div>
-            <label>Cuve</label>
-            <select id="voice-cuve"></select>
-          </div>
-          <div>
-            <label>Densité (g/cm³)</label>
-            <input type="text" inputmode="decimal" id="voice-densite">
-          </div>
-          <div>
-            <label>Température (°C)</label>
-            <input type="text" inputmode="decimal" id="voice-temp">
-          </div>
-          <div>
-            <label>Date</label>
-            <input type="date" id="voice-date">
-          </div>
-        </div>
-        <div style="display:flex;gap:8px;margin-top:12px">
-          <button class="btn btn-primary" style="flex:1" onclick="saveMobileMesure()">💾 Enregistrer</button>
-          <button class="btn" onclick="cancelVoiceForm()">Annuler</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- Saisie manuelle rapide -->
-    <div class="mobile-card">
-      <h3>✏️ Saisie manuelle</h3>
-      <div style="display:grid;gap:10px">
-        <div>
-          <label>Cuve</label>
-          <select id="manual-cuve"></select>
-        </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-          <div>
-            <label>Densité</label>
-            <input type="text" inputmode="decimal" id="manual-densite" placeholder="1,080">
-          </div>
-          <div>
-            <label>Température</label>
-            <input type="text" inputmode="decimal" id="manual-temp" placeholder="20">
-          </div>
-        </div>
-        <div>
-          <label>Date</label>
-          <input type="date" id="manual-date">
-        </div>
-      </div>
-      <button class="btn btn-primary" style="width:100%;margin-top:12px" onclick="saveMobileMesureManual()">💾 Enregistrer</button>
-    </div>
-
-    <!-- Nouvelle cuve -->
-    <div class="mobile-card">
-      <h3>+ Nouvelle cuve</h3>
-      <div style="display:flex;gap:8px">
-        <input type="text" id="mobile-new-cuve" placeholder="Nom de la cuve" style="flex:1">
-        <button class="btn btn-primary" onclick="addMobileCuve()">Créer</button>
-      </div>
-    </div>
-
-    <!-- Dernières mesures (lecture seule) -->
-    <div class="mobile-card">
-      <h3>📊 Dernières mesures</h3>
-      <div id="mobile-mesures-list" style="font-size:13px"></div>
-    </div>
-  </div>
-</div>
-
-<script>
-// ─── Supabase ─────────────────────────────────────────────────────────────────
-var SUPABASE_URL = 'https://gctvtjelleajwpcbkqqs.supabase.co';
-var SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdjdHZ0amVsbGVhandwY2JrcXFzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMzNDYwMzgsImV4cCI6MjA5ODkyMjAzOH0.SdkuiIjqJbOcCCRbacCCY5Qme5Ayy1RX29XWGlXGAyc';
-var sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-
-var currentOrgId = null;
-var currentUserName = '';
-var isMobile = window.innerWidth <= 768;
-
-// ─── Auth ────────────────────────────────────────────────────────────────────
-async function sbLogin() {
-  var email    = document.getElementById('sb-email').value.trim();
-  var password = document.getElementById('sb-password').value;
-  var errEl    = document.getElementById('sb-error');
-  errEl.style.display = 'none';
-  if (!email || !password) { errEl.textContent = 'Email et mot de passe requis.'; errEl.style.display = 'block'; return; }
-  var btn = document.querySelector('#login-form .btn-primary');
-  btn.textContent = 'Connexion…'; btn.disabled = true;
-  var result = await sb.auth.signInWithPassword({ email: email, password: password });
-  btn.textContent = 'Se connecter'; btn.disabled = false;
-  if (result.error) { errEl.textContent = result.error.message; errEl.style.display = 'block'; return; }
-  await onLogin(result.data.user);
-}
-
-async function onLogin(user) {
-  // Charger le profil
-  var profil = await sb.from('profiles').select('org_id, nom, role').eq('id', user.id).single();
-  if (profil.error || !profil.data) {
-    document.getElementById('sb-error').textContent = 'Profil introuvable. Contactez votre administrateur.';
-    document.getElementById('sb-error').style.display = 'block';
-    document.getElementById('login-form').style.display = 'block';
-    document.getElementById('login-loading').style.display = 'none';
-    return;
-  }
-  currentOrgId   = profil.data.org_id;
-  currentUserName = profil.data.nom;
-  currentUser     = profil.data.nom;
-  // Charger toutes les données
-  await Promise.all([ loadSbCuves(), loadSbGlobal() ]);
-  document.getElementById('login-overlay').style.display = 'none';
-  // Afficher bonne interface selon device
-  isMobile = window.innerWidth <= 768;
-  if (isMobile) {
-    document.getElementById('app-mobile').style.display = 'block';
-    document.getElementById('mobile-user-badge').textContent = '👤 ' + escHtml(currentUserName);
-    renderMobile();
-  } else {
-    document.getElementById('app-desktop').style.display = 'block';
-    document.getElementById('user-badge').style.display = 'flex';
-    document.getElementById('user-badge').innerHTML = '👤 ' + escHtml(currentUserName);
-    document.getElementById('btn-logout').style.display = '';
-    renderAll();
-  }
-}
-
-async function sbLogout() {
-  await sb.auth.signOut();
-  currentOrgId = null; currentUser = null; cuves = [];
-  alertes = JSON.parse(JSON.stringify(DEFAULT_ALERTES));
-  document.getElementById('app-desktop').style.display = 'none';
-  document.getElementById('app-mobile').style.display = 'none';
+  // Charger les données globales dès le démarrage (alertes, levures, variables)
+  loadGlobalAlertes();
+  loadGlobalLevures();
+  loadGlobalVariables();
+  renderLogin();
   document.getElementById('login-overlay').style.display = 'flex';
-  document.getElementById('login-loading').style.display = 'none';
-  document.getElementById('login-form').style.display = 'block';
-  document.getElementById('sb-email').value = '';
-  document.getElementById('sb-password').value = '';
-}
-
-function logout() { sbLogout(); }
-
-// ─── Chargement Supabase → mémoire ───────────────────────────────────────────
-async function loadSbCuves() {
-  var r = await sb.from('cuves').select('*, mesures(date,densite,temperature)').eq('org_id', currentOrgId).order('nom');
-  if (r.error) { console.error('loadSbCuves:', r.error); cuves = []; return; }
-  cuves = (r.data || []).map(function(c) {
-    var mes = (c.mesures || []).slice().sort(function(a,b){ return a.date.localeCompare(b.date); });
-    return {
-      _id: c.id,
-      nom: c.nom,
-      appellation: c.appellation || '',
-      couleur: c.couleur || '',
-      qualite: c.qualite || '',
-      tap: c.tap,
-      azoteAssimilable: c.azote_assimilable,
-      levure: c.levure_nom || '',
-      archived: c.archived || false,
-      dateArchive: c.date_archive || null,
-      alertesValidees: Array.isArray(c.alertes_validees) ? c.alertes_validees : [],
-      mesures: mes.map(function(m){ return { date: m.date, densite: parseFloat(m.densite), temperature: parseFloat(m.temperature) }; })
-    };
+  document.getElementById('new-username').addEventListener('keydown', function(e){
+    if (e.key === 'Enter') createUser();
   });
-}
-
-async function loadSbGlobal() {
-  var [ rAl, rLe, rVa ] = await Promise.all([
-    sb.from('alertes_globales').select('app_id,config').eq('org_id', currentOrgId),
-    sb.from('levures').select('*').eq('org_id', currentOrgId).order('nom'),
-    sb.from('variables_calculees').select('*').eq('org_id', currentOrgId).order('ordre')
-  ]);
-  alertes = (rAl.data && rAl.data.length)
-    ? rAl.data.map(function(r){ return Object.assign({ _sbid: r.app_id }, r.config); })
-    : JSON.parse(JSON.stringify(DEFAULT_ALERTES));
-  levures = (rLe.data && rLe.data.length)
-    ? rLe.data.map(function(r){ return { _sbid: r.id, id: r.id, nom: r.nom, besoinAzote: r.besoin_azote }; })
-    : JSON.parse(JSON.stringify(DEFAULT_LEVURES));
-  variablesCalculees = (rVa.data || []).map(function(r){
-    return { _sbid: r.id, id: r.id, nom: r.nom, formule: r.formule, unite: r.unite || '', visible: r.visible, ordre: r.ordre };
+  document.getElementById('admin-code-input').addEventListener('keydown', function(e){
+    if (e.key === 'Enter') validateAdminCode();
+    if (e.key === 'Escape') showLoginPanel();
   });
-}
-
-// ─── Sauvegarde Supabase ──────────────────────────────────────────────────────
-async function saveUserData() {
-  if (!currentOrgId) return;
-  for (var i = 0; i < cuves.length; i++) {
-    var c = cuves[i];
-    var payload = {
-      org_id: currentOrgId, nom: c.nom,
-      appellation: c.appellation || '', couleur: c.couleur || '', qualite: c.qualite || '',
-      tap: c.tap || null, azote_assimilable: c.azoteAssimilable || null, levure_nom: c.levure || '',
-      archived: !!c.archived, date_archive: c.dateArchive || null,
-      alertes_validees: JSON.stringify(c.alertesValidees || [])
-    };
-    var r;
-    if (c._id) {
-      r = await sb.from('cuves').update(payload).eq('id', c._id);
-    } else {
-      r = await sb.from('cuves').insert(payload).select('id').single();
-      if (r.data) c._id = r.data.id;
-    }
-    if (r.error) console.error('saveUserData cuve:', r.error);
-    // Mesures : upsert
-    if (c._id && c.mesures.length) {
-      var mesRows = c.mesures.map(function(m){ return { cuve_id: c._id, org_id: currentOrgId, date: m.date, densite: m.densite, temperature: m.temperature }; });
-      var rm = await sb.from('mesures').upsert(mesRows, { onConflict: 'cuve_id,date' });
-      if (rm.error) console.error('saveUserData mesures:', rm.error);
-    }
-  }
-}
-
-async function saveGlobalAlertes() {
-  if (!currentOrgId) return;
-  await sb.from('alertes_globales').delete().eq('org_id', currentOrgId);
-  if (!alertes.length) return;
-  var rows = alertes.map(function(a){ var c = Object.assign({},a); delete c._sbid; return { org_id: currentOrgId, app_id: String(a.id || a._sbid), config: c }; });
-  var r = await sb.from('alertes_globales').insert(rows);
-  if (r.error) console.error('saveGlobalAlertes:', r.error);
-}
-
-async function saveGlobalLevures() {
-  if (!currentOrgId) return;
-  await sb.from('levures').delete().eq('org_id', currentOrgId);
-  if (!levures.length) return;
-  var rows = levures.map(function(l){ return { org_id: currentOrgId, nom: l.nom, besoin_azote: l.besoinAzote || 'Moyen' }; });
-  var r = await sb.from('levures').insert(rows);
-  if (r.error) console.error('saveGlobalLevures:', r.error);
-}
-
-async function saveGlobalVariables() {
-  if (!currentOrgId) return;
-  await sb.from('variables_calculees').delete().eq('org_id', currentOrgId);
-  if (!variablesCalculees.length) return;
-  var rows = variablesCalculees.map(function(v, i){ return { org_id: currentOrgId, nom: v.nom, formule: v.formule || '', unite: v.unite || '', visible: v.visible !== false, ordre: i }; });
-  var r = await sb.from('variables_calculees').insert(rows);
-  if (r.error) console.error('saveGlobalVariables:', r.error);
-}
-
-// Compatibilité : ces fonctions étaient appelées mais sans Supabase n'ont rien à charger
-// (tout est déjà en mémoire depuis loadSbGlobal)
-function loadGlobalAlertes()   {}
-function loadGlobalLevures()   {}
-function loadGlobalVariables() {}
-
-// ─── Interface mobile ─────────────────────────────────────────────────────────
-function renderMobile() {
-  // Remplir les selects de cuves
-  var cuvesActives = getSortedCuves().filter(function(c){ return !c.archived; });
-  var opts = cuvesActives.map(function(c){ return '<option value="' + cuves.indexOf(c) + '">' + escHtml(c.nom) + '</option>'; }).join('');
-  ['voice-cuve','manual-cuve'].forEach(function(id){
-    var el = document.getElementById(id);
-    if (el) el.innerHTML = opts || '<option value="">Aucune cuve</option>';
-  });
-  // Date du jour par défaut
-  var today = new Date().toISOString().slice(0,10);
-  ['voice-date','manual-date'].forEach(function(id){
-    var el = document.getElementById(id);
-    if (el && !el.value) el.value = today;
-  });
-  // Dernières mesures
-  renderMobileMesures();
-}
-
-function renderMobileMesures() {
-  var el = document.getElementById('mobile-mesures-list');
-  if (!el) return;
-  var actives = getSortedCuves().filter(function(c){ return !c.archived && c.mesures.length; });
-  if (!actives.length) { el.innerHTML = '<div style="color:var(--c-muted)">Aucune mesure enregistrée.</div>'; return; }
-  el.innerHTML = actives.map(function(c) {
-    var m = c.mesures[c.mesures.length-1];
-    var activeAl = evalAlertesCuve(c);
-    var alertHtml = activeAl.length
-      ? '<div style="margin-top:4px">' + activeAl.map(function(a){
-          return '<span style="font-size:11px;background:var(--c-amber);color:var(--c-amber-text);padding:2px 6px;border-radius:10px;margin-right:4px">⚠ ' + escHtml(a.message) + '</span>';
-        }).join('') + '</div>'
-      : '';
-    return '<div style="padding:10px 0;border-bottom:1px solid var(--c-border)">'
-      + '<div style="font-weight:600">' + escHtml(c.nom) + '</div>'
-      + '<div style="font-size:12px;color:var(--c-muted)">' + m.date
-      + ' · ' + fmtDecimal(m.densite, 3) + ' g/cm³'
-      + ' · ' + fmtDecimal(m.temperature, 1) + '°C</div>'
-      + alertHtml
-      + '</div>';
-  }).join('');
-}
-
-async function saveMobileMesure() {
-  var ci   = parseInt(document.getElementById('voice-cuve').value);
-  var dens = parseDecimal(document.getElementById('voice-densite').value);
-  var temp = parseDecimal(document.getElementById('voice-temp').value);
-  var date = document.getElementById('voice-date').value;
-  if (isNaN(dens) || isNaN(temp) || !date) { alert('Données incomplètes.'); return; }
-  cuves[ci].mesures.push({ date: date, densite: dens, temperature: temp });
-  cuves[ci].mesures.sort(function(a,b){ return a.date.localeCompare(b.date); });
-  await saveUserData();
-  document.getElementById('voice-form').style.display = 'none';
-  document.getElementById('voice-feedback').textContent = '✓ Mesure enregistrée !';
-  document.getElementById('voice-feedback').className = 'voice-feedback ok';
-  renderMobile();
-}
-
-async function saveMobileMesureManual() {
-  var ci   = parseInt(document.getElementById('manual-cuve').value);
-  var dens = parseDecimal(document.getElementById('manual-densite').value);
-  var temp = parseDecimal(document.getElementById('manual-temp').value);
-  var date = document.getElementById('manual-date').value;
-  if (isNaN(ci) || isNaN(dens) || isNaN(temp) || !date) { alert('Données incomplètes.'); return; }
-  cuves[ci].mesures.push({ date: date, densite: dens, temperature: temp });
-  cuves[ci].mesures.sort(function(a,b){ return a.date.localeCompare(b.date); });
-  await saveUserData();
-  document.getElementById('manual-densite').value = '';
-  document.getElementById('manual-temp').value = '';
-  alert('Mesure enregistrée !');
-  renderMobile();
-}
-
-async function addMobileCuve() {
-  var nom = document.getElementById('mobile-new-cuve').value.trim();
-  if (!nom) { alert('Saisir un nom de cuve.'); return; }
-  cuves.push({ nom: nom, mesures: [], archived: false, appellation:'', couleur:'', qualite:'', tap:null, azoteAssimilable:null, levure:'', alertesValidees:[] });
-  await saveUserData();
-  document.getElementById('mobile-new-cuve').value = '';
-  renderMobile();
-  alert('Cuve « ' + nom + ' » créée !');
-}
-
-function cancelVoiceForm() {
-  document.getElementById('voice-form').style.display = 'none';
-  document.getElementById('voice-feedback').textContent = 'Saisie annulée.';
-  document.getElementById('voice-feedback').className = 'voice-feedback';
-}
-
-// ─── Saisie vocale ────────────────────────────────────────────────────────────
-var _recognition = null;
-
-function startVoice() {
-  var btn = document.getElementById('btn-voice');
-  var fb  = document.getElementById('voice-feedback');
-  var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SpeechRecognition) {
-    fb.textContent = 'La reconnaissance vocale n\'est pas supportée sur ce navigateur. Utilisez Chrome ou Safari.';
-    fb.className = 'voice-feedback error';
-    return;
-  }
-  if (_recognition) { _recognition.stop(); return; }
-  _recognition = new SpeechRecognition();
-  _recognition.lang = 'fr-FR';
-  _recognition.continuous = false;
-  _recognition.interimResults = false;
-  btn.className = 'btn-voice listening';
-  btn.textContent = '⏹ Écoute en cours…';
-  fb.textContent = 'Parlez maintenant…';
-  fb.className = 'voice-feedback';
-  _recognition.onresult = function(event) {
-    var transcript = event.results[0][0].transcript;
-    fb.textContent = '« ' + transcript + ' »';
-    parseVoiceInput(transcript);
-  };
-  _recognition.onerror = function(e) {
-    fb.textContent = 'Erreur : ' + e.error + '. Réessayez.';
-    fb.className = 'voice-feedback error';
-  };
-  _recognition.onend = function() {
-    btn.className = 'btn-voice';
-    btn.textContent = '🎤 Appuyer et parler';
-    _recognition = null;
-  };
-  _recognition.start();
-}
-
-function parseVoiceInput(text) {
-  var fb = document.getElementById('voice-feedback');
-  // Normalise : retire accents de "densité/température", convertit virgules en points
-  var t = text.toLowerCase()
-    .replace(/densité|densite|densitée/g, 'densite')
-    .replace(/température|temperature|temp/g, 'temperature')
-    .replace(/virgule/g, '.')
-    .replace(/,/g, '.');
-
-  // Cherche la cuve : "cuve X" ou "cuve numéro X"
-  var cuveMatch = t.match(/cuve\s+(?:num[eé]ro\s+)?([a-z0-9\s]+?)(?:\s+densite|\s+temperature|$)/i);
-  var densMatch  = t.match(/densite\s+([\d.]+)/i);
-  var tempMatch  = t.match(/temperature\s+([\d.]+)/i);
-
-  if (!cuveMatch && !densMatch && !tempMatch) {
-    fb.textContent = '❌ Phrase non reconnue. Essayez : « Cuve 12, densité 1080, température 20 »';
-    fb.className = 'voice-feedback error';
-    return;
-  }
-
-  // Recherche la cuve par nom
-  var cuveNom = cuveMatch ? cuveMatch[1].trim() : '';
-  var cuveIdx = -1;
-  if (cuveNom) {
-    cuves.forEach(function(c, i) {
-      if (!c.archived && c.nom.toLowerCase() === cuveNom) cuveIdx = i;
-    });
-    // Recherche partielle si pas de match exact
-    if (cuveIdx === -1) {
-      cuves.forEach(function(c, i) {
-        if (!c.archived && c.nom.toLowerCase().indexOf(cuveNom) !== -1) cuveIdx = i;
-      });
-    }
-  }
-
-  // Pré-remplir le formulaire
-  var cuveEl  = document.getElementById('voice-cuve');
-  var densEl  = document.getElementById('voice-densite');
-  var tempEl  = document.getElementById('voice-temp');
-  if (cuveIdx !== -1) cuveEl.value = cuveIdx;
-  if (densMatch)  densEl.value  = fmtDecimal(parseFloat(densMatch[1]), 3);
-  if (tempMatch)  tempEl.value  = fmtDecimal(parseFloat(tempMatch[1]), 1);
-  document.getElementById('voice-form').style.display = 'block';
-  fb.className = 'voice-feedback ok';
-  fb.textContent = '✓ Vérifiez et confirmez :';
-}
-
-// ─── Init ─────────────────────────────────────────────────────────────────────
-window.addEventListener('DOMContentLoaded', async function() {
-  // Vérifier session existante
-  var session = await sb.auth.getSession();
-  if (session.data.session) {
-    await onLogin(session.data.session.user);
-  } else {
-    document.getElementById('login-loading').style.display = 'none';
-    document.getElementById('login-form').style.display = 'block';
-  }
-  // Touches clavier login
-  ['sb-email','sb-password'].forEach(function(id) {
-    var el = document.getElementById(id);
-    if (el) el.addEventListener('keydown', function(e){ if (e.key === 'Enter') sbLogin(); });
-  });
-  // Admin
-  var adminInput = document.getElementById('admin-code-input');
-  if (adminInput) {
-    adminInput.addEventListener('keydown', function(e){
-      if (e.key === 'Enter') validateAdminCode();
-      if (e.key === 'Escape') showLoginPanel();
-    });
-  }
-  // Offset sticky
+  // Calcule la hauteur du sticky header pour positionner la barre de raccourcis cuves
   function updateStickyOffset() {
-    var st = document.querySelector('.sticky-top');
-    if (st) document.documentElement.style.setProperty('--sticky-offset', st.getBoundingClientRect().height + 'px');
+    var stickyTop = document.querySelector('.sticky-top');
+    if (stickyTop) {
+      var h = stickyTop.getBoundingClientRect().height;
+      document.documentElement.style.setProperty('--sticky-offset', h + 'px');
+    }
   }
   updateStickyOffset();
   window.addEventListener('resize', updateStickyOffset);
+  // Re-calcule après le premier rendu (contenu peut faire changer la hauteur)
   setTimeout(updateStickyOffset, 300);
 });
 </script>
