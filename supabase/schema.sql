@@ -72,6 +72,8 @@ create table variables_calculees (
   id bigint primary key generated always as identity,
   nom text not null,
   formule text not null,
+  unite text not null default '',
+  visible boolean not null default true,
   ordre int not null default 0
 );
 

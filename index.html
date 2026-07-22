@@ -594,12 +594,12 @@ async function saveGlobalLevures() {
 async function loadGlobalVariables() {
   var r = await sb.from('variables_calculees').select('*').order('ordre');
   if (r.error) { console.error('loadGlobalVariables:', r.error); variablesCalculees = []; return; }
-  variablesCalculees = (r.data || []).map(function(v){ return { id: v.id, nom: v.nom, formule: v.formule }; });
+  variablesCalculees = (r.data || []).map(function(v){ return { id: v.id, nom: v.nom, formule: v.formule, unite: v.unite || '', visible: v.visible !== false }; });
 }
 async function saveGlobalVariables() {
   await sb.from('variables_calculees').delete().neq('id', -1);
   if (!variablesCalculees.length) return;
-  var rows = variablesCalculees.map(function(v, i){ return { nom: v.nom, formule: v.formule, ordre: i }; });
+  var rows = variablesCalculees.map(function(v, i){ return { nom: v.nom, formule: v.formule, unite: v.unite || '', visible: v.visible !== false, ordre: i }; });
   var r = await sb.from('variables_calculees').insert(rows).select('id');
   if (r.error) { console.error('saveGlobalVariables:', r.error); return; }
   r.data.forEach(function(row, i){ variablesCalculees[i].id = row.id; });
@@ -884,9 +884,13 @@ function renderLevuresAdmin() {
       + '</tbody></table></div>'
     : '<p style="font-size:13px;color:var(--c-muted)">Aucune levure définie.</p>';
 }
-// updateLevure : sauvegarde en mémoire sans re-rendre (pour éviter perte de focus à chaque frappe)
+// updateLevure : sauvegarde en mémoire sans re-rendre (pour éviter perte de focus à chaque frappe).
+// Ne déclenche PAS d'écriture réseau ici : saveGlobalLevures() fait un delete+insert complet de
+// la table, donc un appel à chaque frappe créait des écritures concurrentes qui se doublaient/
+// s'écrasaient dans le désordre selon l'ordre d'arrivée des réponses réseau. La sauvegarde
+// réelle n'a lieu qu'une fois, au blur (voir updateLevure).
 function updateLevureSilent(li, field, val) {
-  if (levures[li]) { levures[li][field] = val; saveGlobalLevures(); }
+  if (levures[li]) { levures[li][field] = val; }
 }
 function updateLevure(li, field, val) {
   if (levures[li]) { levures[li][field] = val; saveGlobalLevures(); }
@@ -1263,8 +1267,14 @@ function addGlobalVariable() {
   renderVariablesAdmin();
   refreshOtherViews();
 }
+// Sauvegarde en mémoire sans re-rendre (pour éviter perte de focus à chaque frappe). Ne
+// déclenche PAS d'écriture réseau ici : saveGlobalVariables() fait un delete+insert complet
+// de la table, donc un appel à chaque frappe (ex. en tapant "mg/L") créait des écritures
+// concurrentes qui pouvaient s'écraser dans le désordre selon l'ordre d'arrivée des réponses
+// réseau — c'est ce qui faisait perdre la valeur du champ Unité. La sauvegarde réelle n'a
+// lieu qu'une fois, au blur (voir updateVariable).
 function updateVariableSilent(vi, field, val) {
-  if (variablesCalculees[vi]) { variablesCalculees[vi][field] = val; saveGlobalVariables(); }
+  if (variablesCalculees[vi]) { variablesCalculees[vi][field] = val; }
 }
 function updateVariable(vi, field, val) {
   if (variablesCalculees[vi]) { variablesCalculees[vi][field] = val; }
@@ -1818,7 +1828,7 @@ function renameCuve(i, val) {
 }
 function addMesure(ci) {
   var date    = document.getElementById('inp-date-' + ci).value;
-  var densite = parseDecimal(document.getElementById('inp-dens-' + ci).value);
+  var densite = sanitizeDensiteValue(parseDecimal(document.getElementById('inp-dens-' + ci).value));
   var temp    = parseDecimal(document.getElementById('inp-temp-' + ci).value);
   if (!date || isNaN(densite) || isNaN(temp)) { alert('Remplissez tous les champs.'); return; }
   cuves[ci].mesures = cuves[ci].mesures.filter(function(m){ return m.date !== date; });
@@ -1888,7 +1898,7 @@ function saveSaisieRapide() {
     var densEl = document.getElementById('sr-dens-' + ci);
     var tempEl = document.getElementById('sr-temp-' + ci);
     if (!densEl || !tempEl) return;
-    var dens = parseDecimal(densEl.value);
+    var dens = sanitizeDensiteValue(parseDecimal(densEl.value));
     var temp = parseDecimal(tempEl.value);
     if (!isNaN(dens) && !isNaN(temp)) {
       // Remove existing entry for same date
@@ -2742,6 +2752,15 @@ function fmtDecimal(num, digits) {
   if (num === null || num === undefined || isNaN(num)) return '';
   var n = (digits !== undefined) ? num.toFixed(digits) : String(num);
   return n.replace('.', ',');
+}
+// Garde-fou : une vraie densité de fermentation vaut toujours plusieurs centaines/milliers
+// dans cette convention (ex. 1080). Si la saisie ressort sous 100 — typiquement une virgule
+// tapée par réflexe de notation scientifique, ex. "1,070" lu comme 1,07 — c'est forcément une
+// erreur d'échelle, jamais une vraie valeur : on la corrige plutôt que d'enregistrer une
+// aberration qui fausserait les alertes et les calculs.
+function sanitizeDensiteValue(val) {
+  if (isNaN(val) || val <= 0) return val;
+  return val < 100 ? val * 1000 : val;
 }
 // Densité : stockée et affichée nativement "autour de 1000" (ex. 1080), par convention du
 // métier — aucune conversion d'échelle, ni à la saisie ni à l'affichage. Math.round absorbe
