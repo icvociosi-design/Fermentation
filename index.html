@@ -1818,7 +1818,7 @@ function renameCuve(i, val) {
 }
 function addMesure(ci) {
   var date    = document.getElementById('inp-date-' + ci).value;
-  var densite = parseDensiteInput(document.getElementById('inp-dens-' + ci).value);
+  var densite = parseDecimal(document.getElementById('inp-dens-' + ci).value);
   var temp    = parseDecimal(document.getElementById('inp-temp-' + ci).value);
   if (!date || isNaN(densite) || isNaN(temp)) { alert('Remplissez tous les champs.'); return; }
   cuves[ci].mesures = cuves[ci].mesures.filter(function(m){ return m.date !== date; });
@@ -1867,7 +1867,7 @@ function renderSaisieRapide() {
       : '<button class="btn btn-sm" title="Terminer la fermentation — retirer de la saisie (données conservées)" onclick="archiveCuve(' + ci + ')" style="color:var(--c-amber-text);border-color:#e0a030">⏹ Terminer</button>';
     return '<tr>'
       + '<td class="cuve-name-cell">' + escHtml(c.nom) + '</td>'
-      + '<td><input type="text" inputmode="decimal" class="sr-dens-input" id="sr-dens-' + ci + '" placeholder="1,080"></td>'
+      + '<td><input type="text" inputmode="decimal" class="sr-dens-input" id="sr-dens-' + ci + '" placeholder="1080"></td>'
       + '<td><input type="text" inputmode="decimal" class="sr-temp-input" id="sr-temp-' + ci + '" placeholder="20"></td>'
       + '<td class="col-alerts">' + alertHtml + '</td>'
       + '<td class="col-check" id="sr-check-' + ci + '"></td>'
@@ -1888,7 +1888,7 @@ function saveSaisieRapide() {
     var densEl = document.getElementById('sr-dens-' + ci);
     var tempEl = document.getElementById('sr-temp-' + ci);
     if (!densEl || !tempEl) return;
-    var dens = parseDensiteInput(densEl.value);
+    var dens = parseDecimal(densEl.value);
     var temp = parseDecimal(tempEl.value);
     if (!isNaN(dens) && !isNaN(temp)) {
       // Remove existing entry for same date
@@ -2015,10 +2015,10 @@ function renderDetail() {
 
       return '<tr' + (isLastRow ? ' style="background:var(--c-surface)"' : '') + '>'
         + '<td>' + m.date + (isLastRow ? ' <span style="font-size:10px;color:var(--c-muted)">(dernière)</span>' : '') + '</td>'
-        + '<td>' + m.densite + ' <span style="font-size:10px;color:var(--c-muted)">g/cm³</span></td>'
+        + '<td>' + fmtDensite(m.densite) + ' <span style="font-size:10px;color:var(--c-muted)">g/cm³</span></td>'
         + '<td>' + m.temperature + '°C</td>'
-        + '<td>' + (m.deltaInit !== undefined ? fmtDecimal(m.deltaInit, 3) : '—') + '</td>'
-        + '<td>' + (m.vitesse !== null ? fmtDecimal(m.vitesse, 3) : '—') + '</td>'
+        + '<td>' + (m.deltaInit !== undefined ? fmtDecimal(m.deltaInit, 0) : '—') + '</td>'
+        + '<td>' + (m.vitesse !== null ? fmtDecimal(m.vitesse, 1) : '—') + '</td>'
         + '<td>' + alertCell + '</td>'
         + '<td><button class="btn btn-danger btn-sm" onclick="removeMesure(' + ci + ',' + mi + ')">✕</button></td>'
         + '</tr>';
@@ -2078,7 +2078,7 @@ function renderDetail() {
       +   '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">'
       +     '<input class="cuve-name-input" value="' + escHtml(c.nom) + '" onchange="renameCuve(' + ci + ',this.value)">'
       +     (last ? '<span class="badge ' + st.cls + '">' + st.label + '</span>' : '')
-      +     (maxV !== null ? '<span class="badge badge-fast" title="Vitesse maximale atteinte">⚡ Max : ' + fmtDecimal(maxV, 3) + ' ΔDensité/j</span>' : '')
+      +     (maxV !== null ? '<span class="badge badge-fast" title="Vitesse maximale atteinte">⚡ Max : ' + fmtDecimal(maxV, 1) + ' ΔDensité/j</span>' : '')
       +     (fermentDuration !== null ? '<span class="badge badge-ok" title="Durée de fermentation">⏱ ' + fermentDuration + ' j</span>' : '')
       +     (c.archived ? '<span class="badge" style="background:#eee;color:#888">Terminée</span>' : '')
       +   '</div>'
@@ -2095,7 +2095,7 @@ function renderDetail() {
       + '<div class="card-title">Ajouter une mesure</div>'
       + '<div class="flex-row" style="margin-bottom:14px">'
       +   '<div><label>Date</label><input type="date" id="inp-date-' + ci + '" value="' + today + '"></div>'
-      +   '<div><label>Densité (g/cm³)</label><input type="text" inputmode="decimal" id="inp-dens-' + ci + '" placeholder="1,080"></div>'
+      +   '<div><label>Densité (g/cm³)</label><input type="text" inputmode="decimal" id="inp-dens-' + ci + '" placeholder="1080"></div>'
       +   '<div><label>Température (°C)</label><input type="text" inputmode="decimal" id="inp-temp-' + ci + '" placeholder="20"></div>'
       +   '<div style="flex:0"><button class="btn btn-primary" style="margin-top:18px" onclick="addMesure(' + ci + ')">+ Ajouter</button></div>'
       + '</div>'
@@ -2164,11 +2164,11 @@ function renderTableauResume() {
     return '<tr>'
       + '<td style="font-weight:600">' + escHtml(c.nom) + '</td>'
       + '<td>' + last.date + '</td>'
-      + '<td>' + last.densite + '</td>'
+      + '<td>' + fmtDensite(last.densite) + '</td>'
       + '<td>' + last.temperature + '°C</td>'
-      + '<td>' + (last.deltaInit !== undefined ? fmtDecimal(last.deltaInit, 3) : '—') + '</td>'
-      + '<td>' + (lastV ? fmtDecimal(lastV.vitesse, 3) : '—') + '</td>'
-      + '<td>' + (maxV !== null ? fmtDecimal(maxV, 3) : '—') + '</td>'
+      + '<td>' + (last.deltaInit !== undefined ? fmtDecimal(last.deltaInit, 0) : '—') + '</td>'
+      + '<td>' + (lastV ? fmtDecimal(lastV.vitesse, 1) : '—') + '</td>'
+      + '<td>' + (maxV !== null ? fmtDecimal(maxV, 1) : '—') + '</td>'
       + '<td>' + renderAlertsCell(activeAl) + '</td>'
       + '<td>' + checkboxesHtml + '</td>'
       + '</tr>';
@@ -2211,11 +2211,11 @@ function exportCSV() {
     rows.push([
       c.nom, c.appellation||'', c.couleur||'', c.qualite||'',
       last.date,
-      fmtDecimal(last.densite, 3),
+      fmtDensite(last.densite),
       fmtDecimal(last.temperature, 1),
-      last.deltaInit !== undefined ? fmtDecimal(last.deltaInit, 3) : '',
-      lastV ? fmtDecimal(lastV.vitesse, 3) : '',
-      maxV !== null ? fmtDecimal(maxV, 3) : '',
+      last.deltaInit !== undefined ? fmtDecimal(last.deltaInit, 0) : '',
+      lastV ? fmtDecimal(lastV.vitesse, 1) : '',
+      maxV !== null ? fmtDecimal(maxV, 1) : '',
       alertMessages
     ]);
   });
@@ -2266,11 +2266,11 @@ async function exportPDF() {
       : 'OK Normale';
     body.push([
       c.nom, c.appellation || '—', c.couleur || '—', last.date,
-      fmtDecimal(last.densite, 3),
+      fmtDensite(last.densite),
       fmtDecimal(last.temperature, 1) + '°C',
-      last.deltaInit !== undefined ? fmtDecimal(last.deltaInit, 3) : '—',
-      lastV ? fmtDecimal(lastV.vitesse, 3) : '—',
-      maxV !== null ? fmtDecimal(maxV, 3) : '—',
+      last.deltaInit !== undefined ? fmtDecimal(last.deltaInit, 0) : '—',
+      lastV ? fmtDecimal(lastV.vitesse, 1) : '—',
+      maxV !== null ? fmtDecimal(maxV, 1) : '—',
       alertCell
     ]);
   });
@@ -2323,10 +2323,10 @@ function exportCuveCSV(ci) {
     var alertMessages = als.length ? als.map(function(a){ return a.message; }).join(' | ') : 'Normale';
     rows.push([
       m.date,
-      fmtDecimal(m.densite, 3),
+      fmtDensite(m.densite),
       fmtDecimal(m.temperature, 1),
-      m.deltaInit !== undefined ? fmtDecimal(m.deltaInit, 3) : '',
-      m.vitesse !== null ? fmtDecimal(m.vitesse, 3) : '',
+      m.deltaInit !== undefined ? fmtDecimal(m.deltaInit, 0) : '',
+      m.vitesse !== null ? fmtDecimal(m.vitesse, 1) : '',
       alertMessages
     ]);
   });
@@ -2394,10 +2394,10 @@ function exportAllCuvesCSV() {
       });
       csvRows.push([
         m.date,
-        fmtDecimal(m.densite, 3),
+        fmtDensite(m.densite),
         fmtDecimal(m.temperature, 1),
-        m.deltaInit !== undefined ? fmtDecimal(m.deltaInit, 3) : '',
-        m.vitesse !== null ? fmtDecimal(m.vitesse, 3) : '',
+        m.deltaInit !== undefined ? fmtDecimal(m.deltaInit, 0) : '',
+        m.vitesse !== null ? fmtDecimal(m.vitesse, 1) : '',
         alertMessages,
         travauxFaits.join(' | ')
       ]);
@@ -2454,10 +2454,10 @@ function renderGraphiques() {
   }
 
   metricsEl.innerHTML =
-    metric('Densité actuelle', last ? last.densite : '—', 'g/cm³') +
-    metric('ΔDensité initiale', (last && last.deltaInit !== undefined) ? fmtDecimal(last.deltaInit, 3) : '—', 'g/cm³') +
-    metric('ΔDensité/j (dernière)', lastV ? fmtDecimal(lastV.vitesse, 3) : '—', '') +
-    metric('ΔDensité/j (max)', vits.length ? fmtDecimal(maxV, 3) : '—', '') +
+    metric('Densité actuelle', last ? fmtDensite(last.densite) : '—', 'g/cm³') +
+    metric('ΔDensité initiale', (last && last.deltaInit !== undefined) ? fmtDecimal(last.deltaInit, 0) : '—', 'g/cm³') +
+    metric('ΔDensité/j (dernière)', lastV ? fmtDecimal(lastV.vitesse, 1) : '—', '') +
+    metric('ΔDensité/j (max)', vits.length ? fmtDecimal(maxV, 1) : '—', '') +
     metric('Durée fermentation', fermentDays !== null ? fermentDays : '—', 'j') +
     metric('Temp. moyenne', avgT, '°C');
 
@@ -2743,15 +2743,12 @@ function fmtDecimal(num, digits) {
   var n = (digits !== undefined) ? num.toFixed(digits) : String(num);
   return n.replace('.', ',');
 }
-// Densité : par convention on l'écrit/la dicte comme un nombre "autour de 1000" (ex. "1080"),
-// même si l'unité physique (g/cm³) vaut ~1. Le champ garde ce texte tel quel (aucune correction
-// visible) ; c'est seulement à l'enregistrement qu'on ramène la valeur à l'échelle réelle
-// (1080 -> 1,080) si aucun séparateur décimal n'a été saisi/dicté.
-function parseDensiteInput(raw) {
-  var val = parseDecimal(raw);
-  if (isNaN(val)) return val;
-  if (!/[.,]/.test(String(raw).trim()) && val > 100) val = val / 1000;
-  return val;
+// Densité : stockée et affichée nativement "autour de 1000" (ex. 1080), par convention du
+// métier — aucune conversion d'échelle, ni à la saisie ni à l'affichage. Math.round absorbe
+// seulement les résidus de virgule flottante (ex. sur les différences ΔDensité).
+function fmtDensite(val) {
+  if (val === null || val === undefined || isNaN(val)) return '—';
+  return String(Math.round(val));
 }
 
 function renderAll() {
@@ -2867,6 +2864,20 @@ function convertFrenchNumberWordsToDigits(normalizedText) {
   return out.join(' ');
 }
 
+// Les suffixes de cuves en doublon (voir SUFFIXES_DOUBLON : "bis", "ter", ...) sont des mots
+// courts et peu fréquents que les moteurs de reconnaissance transcrivent parfois de travers
+// (ex. "ter" entendu "terre"). Sans correction, "Cuve 1 ter" ne matchait plus du tout et le
+// programme retombait sur "Cuve 1" (le nom de base, plus court, qui matchait quand même) —
+// remplissant la mauvaise ligne. On normalise ici les variantes les plus probables vers la
+// forme canonique utilisée dans les noms de cuve.
+var VOICE_SUFFIX_ALIASES = {
+  biss: 'bis', bisse: 'bis', bises: 'bis', biz: 'bis',
+  terre: 'ter', taire: 'ter', tere: 'ter', tair: 'ter'
+};
+function normalizeVoiceSuffixWords(normalizedText) {
+  return normalizedText.split(' ').map(function(t){ return VOICE_SUFFIX_ALIASES[t] || t; }).join(' ');
+}
+
 // Cherche, parmi les cuves actives, celle dont le nom apparaît dans le texte (déjà
 // normalisé) en tant que suite de mots isolée (bornée par des espaces/début/fin) — et non
 // comme simple sous-chaîne. Sans cette précaution, une cuve "1" matcherait par erreur dans
@@ -2914,7 +2925,7 @@ function setVoiceRowChecked(ci, checked) {
 // alternative ne veut rien dire de précis — pour pouvoir essayer l'alternative suivante du
 // moteur de reconnaissance plutôt que de se fier aveuglément à la première hypothèse.
 function interpretVoiceAlternative(rawText) {
-  var norm = convertFrenchNumberWordsToDigits(normalizeForVoiceMatch(rawText));
+  var norm = normalizeVoiceSuffixWords(convertFrenchNumberWordsToDigits(normalizeForVoiceMatch(rawText)));
   if (isVoiceValidationCommand(norm)) return { type: 'validate' };
   if (isVoiceCancelCommand(norm)) return { type: 'cancel' };
   var cuve = findCuveByVoice(norm);
@@ -2975,8 +2986,7 @@ function handleVoiceResult(alternatives) {
   var tEl = document.getElementById('sr-temp-' + ci);
   var parts = [];
   if (parsed.densRaw !== null && dEl) {
-    // Valeur dictée reportée telle quelle (ex. "1080"), sans la reformater en décimal :
-    // c'est à l'enregistrement (parseDensiteInput) qu'elle sera ramenée à l'échelle réelle.
+    // Valeur dictée reportée telle quelle (ex. "1080") : c'est aussi l'échelle de stockage.
     dEl.value = parsed.densRaw;
     parts.push('densité ' + parsed.densRaw);
   }
