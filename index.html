@@ -2960,7 +2960,11 @@ function selectVoiceCuve(ci) {
   if (!_voiceSupported || !isMobileLite() || !cuves[ci]) return;
   // startVoiceCapture() réinitialise _voiceCurrentCi à null (nouvelle session d'écoute) : il
   // faut donc l'appeler AVANT de fixer la cuve ciblée, sinon la sélection est aussitôt effacée.
-  if (!_recognition) startVoiceCapture();
+  // Le try/catch est une double protection : même si le démarrage du micro échoue (permission
+  // refusée, etc.), le ciblage visuel de la ligne doit toujours fonctionner.
+  if (!_recognition) {
+    try { startVoiceCapture(); } catch (e) { /* le micro reste indisponible, on cible quand même la ligne */ }
+  }
   _voiceCurrentCi = ci;
   setVoiceActiveRow(ci);
   var fb = document.getElementById('voice-feedback');
@@ -3094,7 +3098,18 @@ function startVoiceCapture() {
     btn.classList.remove('listening');
     _recognition = null;
   };
-  _recognition.start();
+  // Sur certains navigateurs (observé sur Chrome Android, pas sur Samsung Internet),
+  // recognition.start() peut lever une exception synchrone (ex. permission micro déjà
+  // refusée) plutôt que de la signaler via onerror. Sans ce try/catch, l'exception remontait
+  // et interrompait le code appelant (ex. selectVoiceCuve), empêchant même la sélection
+  // visuelle d'une ligne de fonctionner.
+  try {
+    _recognition.start();
+  } catch (e) {
+    btn.classList.remove('listening');
+    _recognition = null;
+    fb.textContent = 'Micro indisponible (' + (e && e.message ? e.message : e) + '). Vérifiez l\'autorisation micro du navigateur.';
+  }
 }
 
 function showView(name, tab) {
