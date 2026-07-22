@@ -3,13 +3,15 @@
 Application de suivi de fermentation (cuves, densité, température, alertes) —
 fichier unique `index.html` (HTML/CSS/JS, sans build).
 
-## Roadmap en cours
+## Roadmap
 
 - [x] Authentification et stockage via Supabase (remplacement de `localStorage`)
-- [ ] Vue mobile allégée (Saisie rapide + création de cuve)
-- [ ] Saisie vocale sur Android (Cuve, Densité, Température)
+- [x] Vue mobile allégée (Saisie rapide + création de cuve)
+- [x] Saisie vocale sur Android (Cuve, Densité, Température)
 
-Ces évolutions sont livrées via des Pull Requests successives.
+Toutes les évolutions prévues sont livrées et fusionnées sur `main`. Le
+développement se poursuit désormais par petits correctifs itératifs (voir
+l'historique des commits), notamment autour de la précision de la saisie vocale.
 
 ## Configuration Supabase (à faire une seule fois)
 
