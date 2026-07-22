@@ -1818,7 +1818,7 @@ function renameCuve(i, val) {
 }
 function addMesure(ci) {
   var date    = document.getElementById('inp-date-' + ci).value;
-  var densite = parseDecimal(document.getElementById('inp-dens-' + ci).value);
+  var densite = parseDensiteInput(document.getElementById('inp-dens-' + ci).value);
   var temp    = parseDecimal(document.getElementById('inp-temp-' + ci).value);
   if (!date || isNaN(densite) || isNaN(temp)) { alert('Remplissez tous les champs.'); return; }
   cuves[ci].mesures = cuves[ci].mesures.filter(function(m){ return m.date !== date; });
@@ -1888,7 +1888,7 @@ function saveSaisieRapide() {
     var densEl = document.getElementById('sr-dens-' + ci);
     var tempEl = document.getElementById('sr-temp-' + ci);
     if (!densEl || !tempEl) return;
-    var dens = parseDecimal(densEl.value);
+    var dens = parseDensiteInput(densEl.value);
     var temp = parseDecimal(tempEl.value);
     if (!isNaN(dens) && !isNaN(temp)) {
       // Remove existing entry for same date
@@ -2743,6 +2743,16 @@ function fmtDecimal(num, digits) {
   var n = (digits !== undefined) ? num.toFixed(digits) : String(num);
   return n.replace('.', ',');
 }
+// Densité : par convention on l'écrit/la dicte comme un nombre "autour de 1000" (ex. "1080"),
+// même si l'unité physique (g/cm³) vaut ~1. Le champ garde ce texte tel quel (aucune correction
+// visible) ; c'est seulement à l'enregistrement qu'on ramène la valeur à l'échelle réelle
+// (1080 -> 1,080) si aucun séparateur décimal n'a été saisi/dicté.
+function parseDensiteInput(raw) {
+  var val = parseDecimal(raw);
+  if (isNaN(val)) return val;
+  if (!/[.,]/.test(String(raw).trim()) && val > 100) val = val / 1000;
+  return val;
+}
 
 function renderAll() {
   renderSaisieRapide();
@@ -2795,9 +2805,13 @@ function toggleLayoutMode() {
 // ─── Saisie vocale (Android — Web Speech API) ─────────────────────────────────
 var _voiceSupported = !!(window.SpeechRecognition || window.webkitSpeechRecognition);
 var _recognition = null;
-// Index (dans `cuves`) de la ligne remplie par la dernière dictée, en attente de
-// validation orale ("validé") — null si aucune ligne n'est en attente.
-var _voiceLastCi = null;
+var VOICE_MAX_ALTERNATIVES = 4;
+// Index (dans `cuves`) de la ligne "active" pour la dictée en cours : celle sur laquelle
+// s'appliquent les phrases courtes qui ne renomment pas de cuve (ex. dire seulement
+// "densité 1080" après avoir déjà nommé la cuve dans une phrase précédente). Remis à null
+// après une validation orale ("validé") ; conservé après une annulation ("annule"/"corrige")
+// pour permettre de redicter aussitôt les valeurs de la même cuve.
+var _voiceCurrentCi = null;
 
 function updateVoiceButtonVisibility() {
   var block = document.getElementById('voice-input-block');
@@ -2810,45 +2824,84 @@ function normalizeForVoiceMatch(s) {
     .replace(/[^a-z0-9]+/g, ' ').trim();
 }
 
-// Cherche, parmi les cuves actives, celle dont le nom apparaît (normalisé) dans le texte
-// reconnu, en tant que suite de mots isolée (bornée par des espaces/début/fin) — et non
+// ── Nombres dictés en toutes lettres (ex. "douze", "quatre-vingts") ────────────────
+// Les moteurs de reconnaissance transcrivent souvent les petits nombres — en particulier
+// un numéro de cuve dit isolément ("cuve douze") — en toutes lettres plutôt qu'en chiffres.
+// On les convertit ici en chiffres pour pouvoir réutiliser tel quel le reste du traitement
+// (recherche de cuve, extraction de densité/température), qui travaille sur des chiffres.
+var FR_NUMBER_WORDS = {
+  zero: 0, un: 1, une: 1, deux: 2, trois: 3, quatre: 4, cinq: 5, six: 6, sept: 7, huit: 8, neuf: 9,
+  dix: 10, onze: 11, douze: 12, treize: 13, quatorze: 14, quinze: 15, seize: 16,
+  vingt: 20, vingts: 20, trente: 30, quarante: 40, cinquante: 50, soixante: 60,
+  cent: 100, cents: 100, mille: 1000
+};
+// Lit un nombre en toutes lettres à partir de tokens[startIdx] (ex. ["quatre","vingt"] -> 80).
+// Retourne {value, length} (nombre de tokens consommés) ou null si ce n'est pas un mot-nombre.
+function parseFrenchNumberWords(tokens, startIdx) {
+  var i = startIdx, current = 0, total = 0, consumed = 0, found = false;
+  while (i < tokens.length) {
+    var tok = tokens[i];
+    if (tok === 'et' && found) { i++; consumed++; continue; }
+    if (!(tok in FR_NUMBER_WORDS)) break;
+    var val = FR_NUMBER_WORDS[tok];
+    found = true;
+    if (val === 1000) { total += (current || 1) * 1000; current = 0; }
+    else if (val === 100) { current = (current || 1) * 100; }
+    else if (val === 20 && current === 4) { current = 80; } // quatre-vingt(s)
+    else { current += val; }
+    i++; consumed++;
+  }
+  total += current;
+  return found ? { value: total, length: consumed } : null;
+}
+// Remplace, dans un texte déjà normalisé, toute suite de mots-nombres par sa forme chiffrée.
+function convertFrenchNumberWordsToDigits(normalizedText) {
+  var tokens = normalizedText.split(' ').filter(Boolean);
+  var out = [];
+  var i = 0;
+  while (i < tokens.length) {
+    var parsed = parseFrenchNumberWords(tokens, i);
+    if (parsed) { out.push(String(parsed.value)); i += parsed.length; }
+    else { out.push(tokens[i]); i++; }
+  }
+  return out.join(' ');
+}
+
+// Cherche, parmi les cuves actives, celle dont le nom apparaît dans le texte (déjà
+// normalisé) en tant que suite de mots isolée (bornée par des espaces/début/fin) — et non
 // comme simple sous-chaîne. Sans cette précaution, une cuve "1" matcherait par erreur dans
 // "cuve 12" (le "1" y est bien un sous-texte de "12" mais pas un mot à part entière), ce qui
 // causait le remplissage de la mauvaise ligne (typiquement la première du tableau).
 // En cas de plusieurs correspondances valides, garde la plus longue (la plus spécifique).
-function findCuveByVoice(transcript) {
-  var norm = normalizeForVoiceMatch(transcript);
+function findCuveByVoice(normalizedText) {
   var best = null, bestLen = 0;
   cuves.filter(function(c){ return !c.archived; }).forEach(function(c) {
     var cn = normalizeForVoiceMatch(c.nom);
     if (!cn) return;
     var re = new RegExp('(^|\\s)' + cn.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(\\s|$)');
-    if (re.test(norm) && cn.length > bestLen) { best = c; bestLen = cn.length; }
+    if (re.test(normalizedText) && cn.length > bestLen) { best = c; bestLen = cn.length; }
   });
   return best;
 }
 
-function extractVoiceNumber(transcript, keywordsPattern) {
+function extractVoiceNumber(normalizedText, keywordsPattern) {
   var re = new RegExp('(?:' + keywordsPattern + ')\\D{0,10}(-?\\d+(?:[.,]\\d+)?)', 'i');
-  var m = transcript.match(re);
+  var m = normalizedText.match(re);
   return m ? m[1] : null;
-}
-
-// Un densité dite "1080" (sans virgule) est en pratique 1,080 g/cm³ pour du moût/vin
-function parseVoiceDensite(raw) {
-  if (raw === null) return null;
-  var val = parseDecimal(raw);
-  if (isNaN(val)) return null;
-  if (!/[.,]/.test(raw) && val > 100) val = val / 1000;
-  return val;
 }
 
 // Une phrase courte du type "validé" / "c'est validé" / "ok validé", sans données de
 // mesure dedans, est traitée comme une confirmation orale plutôt qu'une nouvelle dictée.
-function isVoiceValidationCommand(transcript) {
-  var norm = normalizeForVoiceMatch(transcript);
-  if (/densit|temperature|degre/.test(norm)) return false;
-  return /(^|\s)valide/.test(norm);
+function isVoiceValidationCommand(normalizedText) {
+  if (/densit|temperature|degre/.test(normalizedText)) return false;
+  return /(^|\s)valide/.test(normalizedText);
+}
+
+// "annule" ou "corrige" : efface les valeurs de la ligne active pour permettre de les
+// redicter, sans changer de cuve active.
+function isVoiceCancelCommand(normalizedText) {
+  if (/densit|temperature|degre/.test(normalizedText)) return false;
+  return /(^|\s)(annule|corrige)/.test(normalizedText);
 }
 
 function setVoiceRowChecked(ci, checked) {
@@ -2856,46 +2909,88 @@ function setVoiceRowChecked(ci, checked) {
   if (chk) chk.textContent = checked ? '✓' : '';
 }
 
-function handleVoiceResult(transcript) {
-  var fb = document.getElementById('voice-feedback');
+// Interprète UNE alternative de reconnaissance et renvoie l'action reconnue (validation,
+// annulation, ou dictée de données comportant une cuve et/ou des valeurs), ou null si cette
+// alternative ne veut rien dire de précis — pour pouvoir essayer l'alternative suivante du
+// moteur de reconnaissance plutôt que de se fier aveuglément à la première hypothèse.
+function interpretVoiceAlternative(rawText) {
+  var norm = convertFrenchNumberWordsToDigits(normalizeForVoiceMatch(rawText));
+  if (isVoiceValidationCommand(norm)) return { type: 'validate' };
+  if (isVoiceCancelCommand(norm)) return { type: 'cancel' };
+  var cuve = findCuveByVoice(norm);
+  var densRaw = extractVoiceNumber(norm, 'densit[e]');
+  var tempRaw = extractVoiceNumber(norm, 'temperature|degres?');
+  if (cuve || densRaw !== null || tempRaw !== null) {
+    return { type: 'data', cuve: cuve, densRaw: densRaw, tempRaw: tempRaw };
+  }
+  return null;
+}
 
-  if (isVoiceValidationCommand(transcript)) {
-    if (_voiceLastCi === null || !cuves[_voiceLastCi]) {
+function handleVoiceResult(alternatives) {
+  var fb = document.getElementById('voice-feedback');
+  var parsed = null, rawUsed = alternatives[0] || '';
+  for (var i = 0; i < alternatives.length; i++) {
+    var r = interpretVoiceAlternative(alternatives[i]);
+    if (r) { parsed = r; rawUsed = alternatives[i]; break; }
+  }
+
+  if (!parsed) {
+    fb.textContent = '🎤 « ' + (alternatives[0] || '') + ' » — pas compris, complétez manuellement ci-dessous.';
+    return;
+  }
+
+  if (parsed.type === 'validate') {
+    if (_voiceCurrentCi === null || !cuves[_voiceCurrentCi]) {
       fb.textContent = '🎤 Rien à valider pour le moment — dictez d\'abord une cuve.';
       return;
     }
-    setVoiceRowChecked(_voiceLastCi, true);
-    fb.textContent = '✅ ' + cuves[_voiceLastCi].nom + ' validée. Dictez la cuve suivante, ou cliquez sur "Enregistrer la saisie" pour terminer.';
-    _voiceLastCi = null;
+    setVoiceRowChecked(_voiceCurrentCi, true);
+    fb.textContent = '✅ ' + cuves[_voiceCurrentCi].nom + ' validée. Dictez la cuve suivante, ou cliquez sur "Enregistrer la saisie" pour terminer.';
+    _voiceCurrentCi = null;
     return;
   }
 
-  var cuve = findCuveByVoice(transcript);
-  var densRaw = extractVoiceNumber(transcript, 'densit[eé]');
-  var tempRaw = extractVoiceNumber(transcript, 'temp[eé]rature|degr[eé]s?');
-  if (!cuve) {
-    fb.textContent = '🎤 « ' + transcript + ' » — cuve non reconnue, complétez manuellement ci-dessous.';
+  if (parsed.type === 'cancel') {
+    if (_voiceCurrentCi === null || !cuves[_voiceCurrentCi]) {
+      fb.textContent = '🎤 Rien à annuler pour le moment.';
+      return;
+    }
+    var dEl0 = document.getElementById('sr-dens-' + _voiceCurrentCi);
+    var tEl0 = document.getElementById('sr-temp-' + _voiceCurrentCi);
+    if (dEl0) dEl0.value = '';
+    if (tEl0) tEl0.value = '';
+    setVoiceRowChecked(_voiceCurrentCi, false);
+    fb.textContent = '↩ Saisie annulée pour ' + cuves[_voiceCurrentCi].nom + '. Redictez la densité/température.';
     return;
   }
-  var ci = cuves.indexOf(cuve);
+
+  // parsed.type === 'data' : une cuve nommée dans cette phrase devient la ligne active ;
+  // sinon (phrase courte du type "densité 1080" seule), on complète la ligne déjà active.
+  var ci = parsed.cuve ? cuves.indexOf(parsed.cuve) : _voiceCurrentCi;
+  if (ci === null || ci === undefined || !cuves[ci]) {
+    fb.textContent = '🎤 « ' + rawUsed + ' » — cuve non reconnue, nommez d\'abord une cuve.';
+    return;
+  }
   var dEl = document.getElementById('sr-dens-' + ci);
   var tEl = document.getElementById('sr-temp-' + ci);
   var parts = [];
-  if (densRaw !== null && dEl) {
-    var d = parseVoiceDensite(densRaw);
-    if (d !== null) { dEl.value = fmtDecimal(d, 3); parts.push('densité ' + fmtDecimal(d, 3)); }
+  if (parsed.densRaw !== null && dEl) {
+    // Valeur dictée reportée telle quelle (ex. "1080"), sans la reformater en décimal :
+    // c'est à l'enregistrement (parseDensiteInput) qu'elle sera ramenée à l'échelle réelle.
+    dEl.value = parsed.densRaw;
+    parts.push('densité ' + parsed.densRaw);
   }
-  if (tempRaw !== null && tEl) {
-    var t = parseDecimal(tempRaw);
+  if (parsed.tempRaw !== null && tEl) {
+    var t = parseDecimal(parsed.tempRaw);
     if (!isNaN(t)) { tEl.value = fmtDecimal(t, 1); parts.push('température ' + fmtDecimal(t, 1)); }
   }
+  _voiceCurrentCi = ci;
   if (!parts.length) {
-    fb.textContent = '🎤 Cuve « ' + cuve.nom + ' » reconnue, mais densité/température non comprises — complétez manuellement ci-dessous.';
+    fb.textContent = '🎤 Cuve « ' + cuves[ci].nom + ' » reconnue — dictez la densité et/ou la température.';
   } else {
     // Une nouvelle dictée pour cette ligne invalide une éventuelle validation précédente.
     setVoiceRowChecked(ci, false);
-    _voiceLastCi = ci;
-    fb.textContent = '🎤 ' + cuve.nom + ' : ' + parts.join(', ') + ' — vérifiez puis dites « validé ».';
+    fb.textContent = '🎤 ' + cuves[ci].nom + ' : ' + parts.join(', ') + ' — vérifiez puis dites « validé » (ou « annule » pour corriger).';
   }
   if (dEl) { dEl.scrollIntoView({ behavior: 'smooth', block: 'center' }); dEl.focus(); }
 }
@@ -2912,19 +3007,23 @@ function startVoiceCapture() {
   // suivante...) sans qu'il faille recliquer sur le bouton entre chaque cuve.
   _recognition.continuous = true;
   _recognition.interimResults = true;
-  _recognition.maxAlternatives = 1;
-  _voiceLastCi = null;
+  // Plusieurs hypothèses par phrase : on essaie chacune (par ordre de confiance décroissant)
+  // jusqu'à en trouver une qui identifie clairement une cuve/commande, plutôt que de se fier
+  // aveuglément à la meilleure hypothèse du moteur si elle est fausse.
+  _recognition.maxAlternatives = VOICE_MAX_ALTERNATIVES;
+  _voiceCurrentCi = null;
   btn.classList.add('listening');
-  fb.textContent = '🎤 Écoute en cours… ex : « Cuve 12, densité 1080, température 20 », puis « validé »';
+  fb.textContent = '🎤 Écoute en cours… dites « Cuve 12 », puis « densité 1080 », « température 20 », puis « validé »';
   _recognition.onresult = function(e) {
     // En mode continu, e.results accumule une entrée par phrase détectée depuis le début
     // de la session : on ne traite que la dernière (les précédentes ont déjà été gérées).
     var res = e.results[e.results.length - 1];
-    var transcript = res[0].transcript;
     if (res.isFinal) {
-      handleVoiceResult(transcript);
+      var alts = [];
+      for (var i = 0; i < res.length; i++) alts.push(res[i].transcript);
+      handleVoiceResult(alts);
     } else {
-      fb.textContent = '🎤 ' + transcript;
+      fb.textContent = '🎤 ' + res[0].transcript;
     }
   };
   _recognition.onerror = function(e) {
