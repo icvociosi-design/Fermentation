@@ -151,7 +151,6 @@
   .saisie-table input.sr-dens-input { width: 100px; }
   .saisie-table input.sr-temp-input { width: 80px; }
   .saisie-table .cuve-name-cell { font-weight: 600; font-size: 13px; white-space: nowrap; max-width: 160px; overflow: hidden; text-overflow: ellipsis; }
-  .saisie-table .col-check { width: 22px; text-align: center; color: var(--c-green-text); font-weight: 700; padding-left: 2px; padding-right: 2px; }
   .saisie-new-row td { background: var(--c-green-light); }
   /* Cible tactile pour aligner la saisie vocale sur une cuve précise (utile avec beaucoup de
      lignes) : on tape le nom de la cuve, la ligne se surligne, il ne reste qu'à dicter. */
@@ -311,7 +310,7 @@
   <div class="header">
     <div>
       <div class="header-title">🍷 Suivi de fermentation</div>
-      <div class="header-sub">Densité en g/cm³ &middot; Vitesse en ΔDensité/jour &middot; Alertes &middot; Graphiques</div>
+      <div class="header-sub">Densité &middot; Vitesse en ΔDensité/jour &middot; Alertes &middot; Graphiques</div>
     </div>
     <div class="header-user">
       <div id="user-badge" class="user-badge" style="display:none"></div>
@@ -354,10 +353,9 @@
         <table class="saisie-table">
           <thead><tr>
             <th>Cuve</th>
-            <th>Densité (g/cm³)</th>
+            <th>Densité</th>
             <th>Température (°C)</th>
             <th class="col-alerts">Alertes actives</th>
-            <th class="col-check"></th>
             <th></th>
           </tr></thead>
           <tbody id="saisie-rapide-body"></tbody>
@@ -397,7 +395,7 @@
       <div class="table-wrap">
         <table class="table">
           <thead><tr>
-            <th>Cuve</th><th>Dernière date</th><th>Densité (g/cm³)</th>
+            <th>Cuve</th><th>Dernière date</th><th>Densité</th>
             <th>Temp. (°C)</th><th>ΔDensité initiale</th><th>ΔDensité/jour</th><th>ΔDensité/j max</th><th>Alertes</th><th>Travail fait</th>
           </tr></thead>
           <tbody id="table-resume-body"></tbody>
@@ -1410,10 +1408,10 @@ function addGlobalAlert() {
 
 // ─── Champs disponibles pour les conditions d'alerte ─────────────────────────
 var CONDITION_CHAMPS_BASE = [
-  { value: 'vitesse',    label: 'ΔDensité/j',          unite: 'Δg/cm³/j', kind: 'number' },
+  { value: 'vitesse',    label: 'ΔDensité/j',          unite: '', kind: 'number' },
   { value: 'temp',       label: 'Température',          unite: '°C',        kind: 'number' },
-  { value: 'densite',    label: 'Densité',               unite: 'g/cm³',     kind: 'number' },
-  { value: 'deltainit',  label: 'ΔDensité initiale',     unite: 'g/cm³',     kind: 'number' },
+  { value: 'densite',    label: 'Densité',               unite: '',     kind: 'number' },
+  { value: 'deltainit',  label: 'ΔDensité initiale',     unite: '',     kind: 'number' },
   { value: 'couleur',    label: 'Couleur',               unite: '',          kind: 'select', options: ['Blanc','Rosé','Rouge'] },
 ];
 // Retourne la liste complète des champs disponibles : champs de base + variables calculées (préfixées var:) + état d'acquittement des alertes (préfixé alerte:)
@@ -1866,7 +1864,7 @@ function renderSaisieRapide() {
   if (!body) return;
 
   if (!activeCuves.length) {
-    body.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:20px;color:var(--c-muted)">Aucune cuve active. Cliquez sur <strong>+ Nouvelle cuve</strong>.</td></tr>';
+    body.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--c-muted)">Aucune cuve active. Cliquez sur <strong>+ Nouvelle cuve</strong>.</td></tr>';
     return;
   }
 
@@ -1884,12 +1882,11 @@ function renderSaisieRapide() {
       + '<td><input type="text" inputmode="decimal" class="sr-dens-input" id="sr-dens-' + ci + '" placeholder="1080"></td>'
       + '<td><input type="text" inputmode="decimal" class="sr-temp-input" id="sr-temp-' + ci + '" placeholder="20"></td>'
       + '<td class="col-alerts">' + alertHtml + '</td>'
-      + '<td class="col-check" id="sr-check-' + ci + '"></td>'
       + '<td class="col-action">' + actionBtn + '</td>'
       + '</tr>';
   }).join('')
   + '<tr class="saisie-new-row">'
-  + '<td colspan="6"><button class="btn btn-sm" onclick="addCuve()" style="width:100%;border-style:dashed">+ Ajouter une cuve</button></td>'
+  + '<td colspan="5"><button class="btn btn-sm" onclick="addCuve()" style="width:100%;border-style:dashed">+ Ajouter une cuve</button></td>'
   + '</tr>';
 }
 
@@ -2029,7 +2026,7 @@ function renderDetail() {
 
       return '<tr' + (isLastRow ? ' style="background:var(--c-surface)"' : '') + '>'
         + '<td>' + m.date + (isLastRow ? ' <span style="font-size:10px;color:var(--c-muted)">(dernière)</span>' : '') + '</td>'
-        + '<td>' + fmtDensite(m.densite) + ' <span style="font-size:10px;color:var(--c-muted)">g/cm³</span></td>'
+        + '<td>' + fmtDensite(m.densite) + '</td>'
         + '<td>' + m.temperature + '°C</td>'
         + '<td>' + (m.deltaInit !== undefined ? fmtDecimal(m.deltaInit, 0) : '—') + '</td>'
         + '<td>' + (m.vitesse !== null ? fmtDecimal(m.vitesse, 1) : '—') + '</td>'
@@ -2109,13 +2106,13 @@ function renderDetail() {
       + '<div class="card-title">Ajouter une mesure</div>'
       + '<div class="flex-row" style="margin-bottom:14px">'
       +   '<div><label>Date</label><input type="date" id="inp-date-' + ci + '" value="' + today + '"></div>'
-      +   '<div><label>Densité (g/cm³)</label><input type="text" inputmode="decimal" id="inp-dens-' + ci + '" placeholder="1080"></div>'
+      +   '<div><label>Densité</label><input type="text" inputmode="decimal" id="inp-dens-' + ci + '" placeholder="1080"></div>'
       +   '<div><label>Température (°C)</label><input type="text" inputmode="decimal" id="inp-temp-' + ci + '" placeholder="20"></div>'
       +   '<div style="flex:0"><button class="btn btn-primary" style="margin-top:18px" onclick="addMesure(' + ci + ')">+ Ajouter</button></div>'
       + '</div>'
       + (calc.length
           ? '<div class="table-wrap"><table class="table"><thead><tr>'
-            + '<th>Date</th><th>Densité (g/cm³)</th><th>Temp.</th><th>ΔDensité initiale</th><th>ΔDensité/j</th><th>Alertes</th><th></th>'
+            + '<th>Date</th><th>Densité</th><th>Temp.</th><th>ΔDensité initiale</th><th>ΔDensité/j</th><th>Alertes</th><th></th>'
             + '</tr></thead><tbody>' + rows + '</tbody></table></div>'
           : '<p style="font-size:13px;color:var(--c-muted)">Aucune mesure saisie.</p>')
       + '</div>';
@@ -2212,7 +2209,7 @@ function getExportCuves() {
 function exportCSV() {
   var cuvesExport = getExportCuves();
   if (!cuvesExport.length) { alert('Aucune cuve active à exporter.'); return; }
-  var rows = [['Cuve','Appellation','Couleur','Qualité','Dernière date','Densité (g/cm3)','Température (°C)','ΔDensité initiale','ΔDensité/jour','ΔDensité/jour max','Alertes']];
+  var rows = [['Cuve','Appellation','Couleur','Qualité','Dernière date','Densité','Température (°C)','ΔDensité initiale','ΔDensité/jour','ΔDensité/jour max','Alertes']];
   cuvesExport.forEach(function(c) {
     var calc  = calcVitesse(c.mesures);
     var last  = calc.length ? calc[calc.length - 1] : null;
@@ -2331,7 +2328,7 @@ function exportCuveCSV(ci) {
   var c = cuves[ci];
   if (!c) return;
   var calc = calcVitesse(c.mesures);
-  var rows = [['Date','Densité (g/cm3)','Température (°C)','ΔDensité initiale','ΔDensité/jour','Alertes']];
+  var rows = [['Date','Densité','Température (°C)','ΔDensité initiale','ΔDensité/jour','Alertes']];
   calc.forEach(function(m, mi) {
     var als = evalAlertesCuve({ mesures: c.mesures.slice(0, mi+1), couleur: c.couleur, tap: c.tap, azoteAssimilable: c.azoteAssimilable, levure: c.levure });
     var alertMessages = als.length ? als.map(function(a){ return a.message; }).join(' | ') : 'Normale';
@@ -2394,7 +2391,7 @@ function exportAllCuvesCSV() {
     }
 
     // En-têtes colonnes mesures
-    csvRows.push(['Date', 'Densité (g/cm3)', 'Température (°C)', 'ΔDensité initiale', 'ΔDensité/jour', 'Alertes', 'Travail fait']);
+    csvRows.push(['Date', 'Densité', 'Température (°C)', 'ΔDensité initiale', 'ΔDensité/jour', 'Alertes', 'Travail fait']);
 
     // Mesures
     calc.forEach(function(m, mi) {
@@ -2468,8 +2465,8 @@ function renderGraphiques() {
   }
 
   metricsEl.innerHTML =
-    metric('Densité actuelle', last ? fmtDensite(last.densite) : '—', 'g/cm³') +
-    metric('ΔDensité initiale', (last && last.deltaInit !== undefined) ? fmtDecimal(last.deltaInit, 0) : '—', 'g/cm³') +
+    metric('Densité actuelle', last ? fmtDensite(last.densite) : '—', '') +
+    metric('ΔDensité initiale', (last && last.deltaInit !== undefined) ? fmtDecimal(last.deltaInit, 0) : '—', '') +
     metric('ΔDensité/j (dernière)', lastV ? fmtDecimal(lastV.vitesse, 1) : '—', '') +
     metric('ΔDensité/j (max)', vits.length ? fmtDecimal(maxV, 1) : '—', '') +
     metric('Durée fermentation', fermentDays !== null ? fermentDays : '—', 'j') +
@@ -2828,9 +2825,9 @@ var _recognition = null;
 var VOICE_MAX_ALTERNATIVES = 4;
 // Index (dans `cuves`) de la ligne "active" pour la dictée en cours : celle sur laquelle
 // s'appliquent les phrases courtes qui ne renomment pas de cuve (ex. dire seulement
-// "densité 1080" après avoir déjà nommé la cuve dans une phrase précédente). Remis à null
-// après une validation orale ("validé") ; conservé après une annulation ("annule"/"corrige")
-// pour permettre de redicter aussitôt les valeurs de la même cuve.
+// "densité 1080" après avoir déjà nommé/sélectionné une cuve précédemment). Pour corriger
+// une valeur, il suffit de retoucher la cuve (voir selectVoiceCuve) et de redicter : ça
+// écrase directement les champs, sans étape de validation/annulation orale séparée.
 var _voiceCurrentCi = null;
 
 function updateVoiceButtonVisibility() {
@@ -2924,25 +2921,6 @@ function extractVoiceNumber(normalizedText, keywordsPattern) {
   return m ? m[1] : null;
 }
 
-// Une phrase courte du type "validé" / "c'est validé" / "ok validé", sans données de
-// mesure dedans, est traitée comme une confirmation orale plutôt qu'une nouvelle dictée.
-function isVoiceValidationCommand(normalizedText) {
-  if (/densit|temperature|degre/.test(normalizedText)) return false;
-  return /(^|\s)valide/.test(normalizedText);
-}
-
-// "annule" ou "corrige" : efface les valeurs de la ligne active pour permettre de les
-// redicter, sans changer de cuve active.
-function isVoiceCancelCommand(normalizedText) {
-  if (/densit|temperature|degre/.test(normalizedText)) return false;
-  return /(^|\s)(annule|corrige)/.test(normalizedText);
-}
-
-function setVoiceRowChecked(ci, checked) {
-  var chk = document.getElementById('sr-check-' + ci);
-  if (chk) chk.textContent = checked ? '✓' : '';
-}
-
 // Surligne la ligne actuellement ciblée par la saisie vocale (ci=null pour tout désurligner) —
 // repère visuel utile quand la Saisie rapide contient beaucoup de cuves.
 function setVoiceActiveRow(ci) {
@@ -2968,19 +2946,17 @@ function selectVoiceCuve(ci) {
   _voiceCurrentCi = ci;
   setVoiceActiveRow(ci);
   var fb = document.getElementById('voice-feedback');
-  if (fb) fb.textContent = '🎯 ' + cuves[ci].nom + ' sélectionnée — dictez « densité … » et/ou « température … », puis « validé ».';
+  if (fb) fb.textContent = '🎯 ' + cuves[ci].nom + ' sélectionnée — dictez « densité … » et/ou « température … ».';
   var dEl = document.getElementById('sr-dens-' + ci);
   if (dEl) dEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 
-// Interprète UNE alternative de reconnaissance et renvoie l'action reconnue (validation,
-// annulation, ou dictée de données comportant une cuve et/ou des valeurs), ou null si cette
-// alternative ne veut rien dire de précis — pour pouvoir essayer l'alternative suivante du
-// moteur de reconnaissance plutôt que de se fier aveuglément à la première hypothèse.
+// Interprète UNE alternative de reconnaissance et renvoie une dictée de données (cuve et/ou
+// valeurs), ou null si cette alternative ne veut rien dire de précis — pour pouvoir essayer
+// l'alternative suivante du moteur de reconnaissance plutôt que de se fier aveuglément à la
+// première hypothèse.
 function interpretVoiceAlternative(rawText) {
   var norm = normalizeVoiceSuffixWords(convertFrenchNumberWordsToDigits(normalizeForVoiceMatch(rawText)));
-  if (isVoiceValidationCommand(norm)) return { type: 'validate' };
-  if (isVoiceCancelCommand(norm)) return { type: 'cancel' };
   var cuve = findCuveByVoice(norm);
   var densRaw = extractVoiceNumber(norm, 'densit[e]');
   var tempRaw = extractVoiceNumber(norm, 'temperature|degres?');
@@ -3003,34 +2979,8 @@ function handleVoiceResult(alternatives) {
     return;
   }
 
-  if (parsed.type === 'validate') {
-    if (_voiceCurrentCi === null || !cuves[_voiceCurrentCi]) {
-      fb.textContent = '🎤 Rien à valider pour le moment — dictez d\'abord une cuve.';
-      return;
-    }
-    setVoiceRowChecked(_voiceCurrentCi, true);
-    fb.textContent = '✅ ' + cuves[_voiceCurrentCi].nom + ' validée. Dictez la cuve suivante, ou cliquez sur "Enregistrer la saisie" pour terminer.';
-    _voiceCurrentCi = null;
-    setVoiceActiveRow(null);
-    return;
-  }
-
-  if (parsed.type === 'cancel') {
-    if (_voiceCurrentCi === null || !cuves[_voiceCurrentCi]) {
-      fb.textContent = '🎤 Rien à annuler pour le moment.';
-      return;
-    }
-    var dEl0 = document.getElementById('sr-dens-' + _voiceCurrentCi);
-    var tEl0 = document.getElementById('sr-temp-' + _voiceCurrentCi);
-    if (dEl0) dEl0.value = '';
-    if (tEl0) tEl0.value = '';
-    setVoiceRowChecked(_voiceCurrentCi, false);
-    fb.textContent = '↩ Saisie annulée pour ' + cuves[_voiceCurrentCi].nom + '. Redictez la densité/température.';
-    return;
-  }
-
-  // parsed.type === 'data' : une cuve nommée dans cette phrase devient la ligne active ;
-  // sinon (phrase courte du type "densité 1080" seule), on complète la ligne déjà active.
+  // Une cuve nommée dans cette phrase devient la ligne active ; sinon (phrase courte du
+  // type "densité 1080" seule), on complète la ligne déjà active (nommée ou touchée avant).
   var ci = parsed.cuve ? cuves.indexOf(parsed.cuve) : _voiceCurrentCi;
   if (ci === null || ci === undefined || !cuves[ci]) {
     fb.textContent = '🎤 « ' + rawUsed + ' » — cuve non reconnue, nommez d\'abord une cuve.';
@@ -3053,9 +3003,7 @@ function handleVoiceResult(alternatives) {
   if (!parts.length) {
     fb.textContent = '🎤 Cuve « ' + cuves[ci].nom + ' » reconnue — dictez la densité et/ou la température.';
   } else {
-    // Une nouvelle dictée pour cette ligne invalide une éventuelle validation précédente.
-    setVoiceRowChecked(ci, false);
-    fb.textContent = '🎤 ' + cuves[ci].nom + ' : ' + parts.join(', ') + ' — vérifiez puis dites « validé » (ou « annule » pour corriger).';
+    fb.textContent = '🎤 ' + cuves[ci].nom + ' : ' + parts.join(', ') + ' — vérifiez, ou retouchez la cuve pour corriger.';
   }
   if (dEl) { dEl.scrollIntoView({ behavior: 'smooth', block: 'center' }); dEl.focus(); }
 }
@@ -3068,17 +3016,17 @@ function startVoiceCapture() {
   if (_recognition) { _recognition.stop(); return; }
   _recognition = new SR();
   _recognition.lang = 'fr-FR';
-  // Écoute continue : le micro reste actif entre plusieurs cuves (dictée, "validé", dictée
-  // suivante...) sans qu'il faille recliquer sur le bouton entre chaque cuve.
+  // Écoute continue : le micro reste actif entre plusieurs cuves (dictée, dictée suivante...)
+  // sans qu'il faille recliquer sur le bouton entre chaque cuve.
   _recognition.continuous = true;
   _recognition.interimResults = true;
   // Plusieurs hypothèses par phrase : on essaie chacune (par ordre de confiance décroissant)
-  // jusqu'à en trouver une qui identifie clairement une cuve/commande, plutôt que de se fier
+  // jusqu'à en trouver une qui identifie clairement une cuve, plutôt que de se fier
   // aveuglément à la meilleure hypothèse du moteur si elle est fausse.
   _recognition.maxAlternatives = VOICE_MAX_ALTERNATIVES;
   _voiceCurrentCi = null;
   btn.classList.add('listening');
-  fb.textContent = '🎤 Écoute en cours… dites « Cuve 12 », puis « densité 1080 », « température 20 », puis « validé »';
+  fb.textContent = '🎤 Écoute en cours… touchez une cuve puis dites « densité 1080 », « température 20 »';
   _recognition.onresult = function(e) {
     // En mode continu, e.results accumule une entrée par phrase détectée depuis le début
     // de la session : on ne traite que la dernière (les précédentes ont déjà été gérées).
