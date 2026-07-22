@@ -153,6 +153,10 @@
   .saisie-table .cuve-name-cell { font-weight: 600; font-size: 13px; white-space: nowrap; max-width: 160px; overflow: hidden; text-overflow: ellipsis; }
   .saisie-table .col-check { width: 22px; text-align: center; color: var(--c-green-text); font-weight: 700; padding-left: 2px; padding-right: 2px; }
   .saisie-new-row td { background: var(--c-green-light); }
+  /* Cible tactile pour aligner la saisie vocale sur une cuve précise (utile avec beaucoup de
+     lignes) : on tape le nom de la cuve, la ligne se surligne, il ne reste qu'à dicter. */
+  body.mobile-lite .saisie-table .cuve-name-cell { cursor: pointer; }
+  .saisie-table tr.voice-row-active td { background: var(--c-green-light); }
 
   .chart-block { position: relative; width: 100%; }
   .chart-label { font-size: 11px; font-weight: 600; color: var(--c-muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 6px; }
@@ -1875,8 +1879,8 @@ function renderSaisieRapide() {
     var actionBtn = hasMesureDate
       ? '<button class="btn btn-danger btn-sm" title="Supprimer la mesure du ' + date + '" onclick=\'removeMesureDate(' + ci + ',' + JSON.stringify(date) + ')\'>✕ ' + date + '</button>'
       : '<button class="btn btn-sm" title="Terminer la fermentation — retirer de la saisie (données conservées)" onclick="archiveCuve(' + ci + ')" style="color:var(--c-amber-text);border-color:#e0a030">⏹ Terminer</button>';
-    return '<tr>'
-      + '<td class="cuve-name-cell">' + escHtml(c.nom) + '</td>'
+    return '<tr id="sr-row-' + ci + '">'
+      + '<td class="cuve-name-cell" onclick="selectVoiceCuve(' + ci + ')" title="Toucher pour aligner la saisie vocale sur cette cuve">' + escHtml(c.nom) + '</td>'
       + '<td><input type="text" inputmode="decimal" class="sr-dens-input" id="sr-dens-' + ci + '" placeholder="1080"></td>'
       + '<td><input type="text" inputmode="decimal" class="sr-temp-input" id="sr-temp-' + ci + '" placeholder="20"></td>'
       + '<td class="col-alerts">' + alertHtml + '</td>'
@@ -2939,6 +2943,32 @@ function setVoiceRowChecked(ci, checked) {
   if (chk) chk.textContent = checked ? '✓' : '';
 }
 
+// Surligne la ligne actuellement ciblée par la saisie vocale (ci=null pour tout désurligner) —
+// repère visuel utile quand la Saisie rapide contient beaucoup de cuves.
+function setVoiceActiveRow(ci) {
+  document.querySelectorAll('.saisie-table tr.voice-row-active').forEach(function(tr){ tr.classList.remove('voice-row-active'); });
+  if (ci !== null && ci !== undefined) {
+    var row = document.getElementById('sr-row-' + ci);
+    if (row) row.classList.add('voice-row-active');
+  }
+}
+
+// Toucher le nom d'une cuve aligne directement la saisie vocale dessus (et démarre le micro
+// si besoin) : avec beaucoup de lignes, il est plus fiable de désigner la cuve au doigt que
+// de compter sur la reconnaissance de son nom/numéro dicté à voix haute.
+function selectVoiceCuve(ci) {
+  if (!_voiceSupported || !isMobileLite() || !cuves[ci]) return;
+  // startVoiceCapture() réinitialise _voiceCurrentCi à null (nouvelle session d'écoute) : il
+  // faut donc l'appeler AVANT de fixer la cuve ciblée, sinon la sélection est aussitôt effacée.
+  if (!_recognition) startVoiceCapture();
+  _voiceCurrentCi = ci;
+  setVoiceActiveRow(ci);
+  var fb = document.getElementById('voice-feedback');
+  if (fb) fb.textContent = '🎯 ' + cuves[ci].nom + ' sélectionnée — dictez « densité … » et/ou « température … », puis « validé ».';
+  var dEl = document.getElementById('sr-dens-' + ci);
+  if (dEl) dEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
 // Interprète UNE alternative de reconnaissance et renvoie l'action reconnue (validation,
 // annulation, ou dictée de données comportant une cuve et/ou des valeurs), ou null si cette
 // alternative ne veut rien dire de précis — pour pouvoir essayer l'alternative suivante du
@@ -2977,6 +3007,7 @@ function handleVoiceResult(alternatives) {
     setVoiceRowChecked(_voiceCurrentCi, true);
     fb.textContent = '✅ ' + cuves[_voiceCurrentCi].nom + ' validée. Dictez la cuve suivante, ou cliquez sur "Enregistrer la saisie" pour terminer.';
     _voiceCurrentCi = null;
+    setVoiceActiveRow(null);
     return;
   }
 
@@ -3014,6 +3045,7 @@ function handleVoiceResult(alternatives) {
     if (!isNaN(t)) { tEl.value = fmtDecimal(t, 1); parts.push('température ' + fmtDecimal(t, 1)); }
   }
   _voiceCurrentCi = ci;
+  setVoiceActiveRow(ci);
   if (!parts.length) {
     fb.textContent = '🎤 Cuve « ' + cuves[ci].nom + ' » reconnue — dictez la densité et/ou la température.';
   } else {
