@@ -151,6 +151,7 @@
   .saisie-table input.sr-dens-input { width: 100px; }
   .saisie-table input.sr-temp-input { width: 80px; }
   .saisie-table .cuve-name-cell { font-weight: 600; font-size: 13px; white-space: nowrap; max-width: 160px; overflow: hidden; text-overflow: ellipsis; }
+  .saisie-table .col-check { width: 22px; text-align: center; color: var(--c-green-text); font-weight: 700; padding-left: 2px; padding-right: 2px; }
   .saisie-new-row td { background: var(--c-green-light); }
 
   .chart-block { position: relative; width: 100%; }
@@ -352,6 +353,7 @@
             <th>Densité (g/cm³)</th>
             <th>Température (°C)</th>
             <th class="col-alerts">Alertes actives</th>
+            <th class="col-check"></th>
             <th></th>
           </tr></thead>
           <tbody id="saisie-rapide-body"></tbody>
@@ -1850,7 +1852,7 @@ function renderSaisieRapide() {
   if (!body) return;
 
   if (!activeCuves.length) {
-    body.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--c-muted)">Aucune cuve active. Cliquez sur <strong>+ Nouvelle cuve</strong>.</td></tr>';
+    body.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:20px;color:var(--c-muted)">Aucune cuve active. Cliquez sur <strong>+ Nouvelle cuve</strong>.</td></tr>';
     return;
   }
 
@@ -1868,11 +1870,12 @@ function renderSaisieRapide() {
       + '<td><input type="text" inputmode="decimal" class="sr-dens-input" id="sr-dens-' + ci + '" placeholder="1,080"></td>'
       + '<td><input type="text" inputmode="decimal" class="sr-temp-input" id="sr-temp-' + ci + '" placeholder="20"></td>'
       + '<td class="col-alerts">' + alertHtml + '</td>'
+      + '<td class="col-check" id="sr-check-' + ci + '"></td>'
       + '<td class="col-action">' + actionBtn + '</td>'
       + '</tr>';
   }).join('')
   + '<tr class="saisie-new-row">'
-  + '<td colspan="5"><button class="btn btn-sm" onclick="addCuve()" style="width:100%;border-style:dashed">+ Ajouter une cuve</button></td>'
+  + '<td colspan="6"><button class="btn btn-sm" onclick="addCuve()" style="width:100%;border-style:dashed">+ Ajouter une cuve</button></td>'
   + '</tr>';
 }
 
@@ -2792,6 +2795,9 @@ function toggleLayoutMode() {
 // ─── Saisie vocale (Android — Web Speech API) ─────────────────────────────────
 var _voiceSupported = !!(window.SpeechRecognition || window.webkitSpeechRecognition);
 var _recognition = null;
+// Index (dans `cuves`) de la ligne remplie par la dernière dictée, en attente de
+// validation orale ("validé") — null si aucune ligne n'est en attente.
+var _voiceLastCi = null;
 
 function updateVoiceButtonVisibility() {
   var block = document.getElementById('voice-input-block');
@@ -2804,14 +2810,20 @@ function normalizeForVoiceMatch(s) {
     .replace(/[^a-z0-9]+/g, ' ').trim();
 }
 
-// Cherche, parmi les cuves actives, celle dont le nom apparaît (normalisé) dans le texte reconnu.
-// En cas de plusieurs correspondances, garde la plus longue (la plus spécifique).
+// Cherche, parmi les cuves actives, celle dont le nom apparaît (normalisé) dans le texte
+// reconnu, en tant que suite de mots isolée (bornée par des espaces/début/fin) — et non
+// comme simple sous-chaîne. Sans cette précaution, une cuve "1" matcherait par erreur dans
+// "cuve 12" (le "1" y est bien un sous-texte de "12" mais pas un mot à part entière), ce qui
+// causait le remplissage de la mauvaise ligne (typiquement la première du tableau).
+// En cas de plusieurs correspondances valides, garde la plus longue (la plus spécifique).
 function findCuveByVoice(transcript) {
   var norm = normalizeForVoiceMatch(transcript);
   var best = null, bestLen = 0;
   cuves.filter(function(c){ return !c.archived; }).forEach(function(c) {
     var cn = normalizeForVoiceMatch(c.nom);
-    if (cn && norm.indexOf(cn) !== -1 && cn.length > bestLen) { best = c; bestLen = cn.length; }
+    if (!cn) return;
+    var re = new RegExp('(^|\\s)' + cn.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(\\s|$)');
+    if (re.test(norm) && cn.length > bestLen) { best = c; bestLen = cn.length; }
   });
   return best;
 }
@@ -2831,8 +2843,33 @@ function parseVoiceDensite(raw) {
   return val;
 }
 
+// Une phrase courte du type "validé" / "c'est validé" / "ok validé", sans données de
+// mesure dedans, est traitée comme une confirmation orale plutôt qu'une nouvelle dictée.
+function isVoiceValidationCommand(transcript) {
+  var norm = normalizeForVoiceMatch(transcript);
+  if (/densit|temperature|degre/.test(norm)) return false;
+  return /(^|\s)valide/.test(norm);
+}
+
+function setVoiceRowChecked(ci, checked) {
+  var chk = document.getElementById('sr-check-' + ci);
+  if (chk) chk.textContent = checked ? '✓' : '';
+}
+
 function handleVoiceResult(transcript) {
   var fb = document.getElementById('voice-feedback');
+
+  if (isVoiceValidationCommand(transcript)) {
+    if (_voiceLastCi === null || !cuves[_voiceLastCi]) {
+      fb.textContent = '🎤 Rien à valider pour le moment — dictez d\'abord une cuve.';
+      return;
+    }
+    setVoiceRowChecked(_voiceLastCi, true);
+    fb.textContent = '✅ ' + cuves[_voiceLastCi].nom + ' validée. Dictez la cuve suivante, ou cliquez sur "Enregistrer la saisie" pour terminer.';
+    _voiceLastCi = null;
+    return;
+  }
+
   var cuve = findCuveByVoice(transcript);
   var densRaw = extractVoiceNumber(transcript, 'densit[eé]');
   var tempRaw = extractVoiceNumber(transcript, 'temp[eé]rature|degr[eé]s?');
@@ -2855,7 +2892,10 @@ function handleVoiceResult(transcript) {
   if (!parts.length) {
     fb.textContent = '🎤 Cuve « ' + cuve.nom + ' » reconnue, mais densité/température non comprises — complétez manuellement ci-dessous.';
   } else {
-    fb.textContent = '🎤 ' + cuve.nom + ' : ' + parts.join(', ') + ' — vérifiez puis cliquez sur Enregistrer.';
+    // Une nouvelle dictée pour cette ligne invalide une éventuelle validation précédente.
+    setVoiceRowChecked(ci, false);
+    _voiceLastCi = ci;
+    fb.textContent = '🎤 ' + cuve.nom + ' : ' + parts.join(', ') + ' — vérifiez puis dites « validé ».';
   }
   if (dEl) { dEl.scrollIntoView({ behavior: 'smooth', block: 'center' }); dEl.focus(); }
 }
@@ -2868,14 +2908,20 @@ function startVoiceCapture() {
   if (_recognition) { _recognition.stop(); return; }
   _recognition = new SR();
   _recognition.lang = 'fr-FR';
+  // Écoute continue : le micro reste actif entre plusieurs cuves (dictée, "validé", dictée
+  // suivante...) sans qu'il faille recliquer sur le bouton entre chaque cuve.
+  _recognition.continuous = true;
   _recognition.interimResults = true;
   _recognition.maxAlternatives = 1;
+  _voiceLastCi = null;
   btn.classList.add('listening');
-  fb.textContent = '🎤 Écoute en cours… ex : « Cuve 12, densité 1080, température 20 »';
+  fb.textContent = '🎤 Écoute en cours… ex : « Cuve 12, densité 1080, température 20 », puis « validé »';
   _recognition.onresult = function(e) {
-    var transcript = '';
-    for (var i = 0; i < e.results.length; i++) transcript += e.results[i][0].transcript;
-    if (e.results[e.results.length - 1].isFinal) {
+    // En mode continu, e.results accumule une entrée par phrase détectée depuis le début
+    // de la session : on ne traite que la dernière (les précédentes ont déjà été gérées).
+    var res = e.results[e.results.length - 1];
+    var transcript = res[0].transcript;
+    if (res.isFinal) {
       handleVoiceResult(transcript);
     } else {
       fb.textContent = '🎤 ' + transcript;
