@@ -43,9 +43,8 @@
   .login-user-btn:hover { background: var(--c-green-light); border-color: var(--c-green); }
   .login-new { display: flex; gap: 8px; }
   .login-new input { flex: 1; }
-  .login-sep { text-align: center; font-size: 11px; color: var(--c-muted); margin: 10px 0; position: relative; }
-  .login-sep::before, .login-sep::after { content:''; position:absolute; top:50%; width:42%; height:1px; background:var(--c-border); }
-  .login-sep::before { left:0; } .login-sep::after { right:0; }
+  .login-sep { display: flex; align-items: center; gap: 10px; font-size: 11px; color: var(--c-muted); margin: 10px 0; }
+  .login-sep::before, .login-sep::after { content:''; flex: 1 1 0; height:1px; background:var(--c-border); }
 
   .nav { display: flex; border-bottom: 1px solid var(--c-border); margin-bottom: 0; }
   .sticky-top { position: sticky; top: 0; z-index: 100; background: var(--c-bg); border-bottom: 2px solid var(--c-border); padding: 12px 16px 0; margin: -16px -16px 0; box-shadow: 0 2px 8px rgba(0,0,0,.07); }
@@ -149,7 +148,9 @@
   .saisie-table td { padding: 5px 6px; border-bottom: 1px solid var(--c-border); vertical-align: middle; }
   .saisie-table tr:last-child td { border-bottom: none; }
   .saisie-table input[type="number"], .saisie-table input[type="text"] { padding: 5px 7px; font-size: 13px; }
-  .saisie-table .cuve-name-cell { font-weight: 600; font-size: 13px; white-space: nowrap; max-width: 160px; }
+  .saisie-table input.sr-dens-input { width: 100px; }
+  .saisie-table input.sr-temp-input { width: 80px; }
+  .saisie-table .cuve-name-cell { font-weight: 600; font-size: 13px; white-space: nowrap; max-width: 160px; overflow: hidden; text-overflow: ellipsis; }
   .saisie-new-row td { background: var(--c-green-light); }
 
   .chart-block { position: relative; width: 100%; }
@@ -186,6 +187,15 @@
   /* Vue mobile allégée : cibles tactiles plus grandes sur la Saisie rapide */
   body.mobile-lite .saisie-table input[type="text"] { padding: 10px 10px; font-size: 16px; }
   body.mobile-lite .saisie-table td, body.mobile-lite .saisie-table th { padding: 10px 8px; }
+  /* Sur mobile, la colonne Alertes est masquée pour ne garder que 4 colonnes et éviter que
+     les boutons d'action (ex. "Terminer") ne débordent du cadre visible. Les colonnes
+     restantes sont aussi resserrées : sans ça, le nom de cuve + les deux champs de saisie
+     à taille normale suffisent déjà à repousser le bouton d'action hors de l'écran. */
+  body.mobile-lite .saisie-table .col-alerts { display: none; }
+  body.mobile-lite .saisie-table .cuve-name-cell { max-width: 84px; }
+  body.mobile-lite .saisie-table input.sr-dens-input { width: 70px; }
+  body.mobile-lite .saisie-table input.sr-temp-input { width: 56px; }
+  body.mobile-lite .saisie-table .col-action .btn { padding: 8px 10px; font-size: 12.5px; white-space: nowrap; }
   body.mobile-lite .btn { padding: 10px 16px; font-size: 14px; }
   body.mobile-lite .header-title { font-size: 15px; }
   body.mobile-lite .header-sub { display: none; }
@@ -341,7 +351,7 @@
             <th>Cuve</th>
             <th>Densité (g/cm³)</th>
             <th>Température (°C)</th>
-            <th>Alertes actives</th>
+            <th class="col-alerts">Alertes actives</th>
             <th></th>
           </tr></thead>
           <tbody id="saisie-rapide-body"></tbody>
@@ -1855,10 +1865,10 @@ function renderSaisieRapide() {
       : '<button class="btn btn-sm" title="Terminer la fermentation — retirer de la saisie (données conservées)" onclick="archiveCuve(' + ci + ')" style="color:var(--c-amber-text);border-color:#e0a030">⏹ Terminer</button>';
     return '<tr>'
       + '<td class="cuve-name-cell">' + escHtml(c.nom) + '</td>'
-      + '<td><input type="text" inputmode="decimal" id="sr-dens-' + ci + '" placeholder="1,080" style="width:100px"></td>'
-      + '<td><input type="text" inputmode="decimal" id="sr-temp-' + ci + '" placeholder="20" style="width:80px"></td>'
-      + '<td>' + alertHtml + '</td>'
-      + '<td>' + actionBtn + '</td>'
+      + '<td><input type="text" inputmode="decimal" class="sr-dens-input" id="sr-dens-' + ci + '" placeholder="1,080"></td>'
+      + '<td><input type="text" inputmode="decimal" class="sr-temp-input" id="sr-temp-' + ci + '" placeholder="20"></td>'
+      + '<td class="col-alerts">' + alertHtml + '</td>'
+      + '<td class="col-action">' + actionBtn + '</td>'
       + '</tr>';
   }).join('')
   + '<tr class="saisie-new-row">'
@@ -2752,6 +2762,12 @@ var MOBILE_BREAKPOINT = 700;
 function isMobileLite() {
   return window.matchMedia('(max-width: ' + MOBILE_BREAKPOINT + 'px)').matches && sessionStorage.getItem('forceFullView') !== '1';
 }
+// Mémorise le dernier état mobile connu : sur Android/Samsung Internet, l'ouverture du
+// clavier virtuel déclenche elle-même un évènement "resize" (sans changement réel de mode).
+// Sans cette garde, applyLayoutMode() réafficherait la vue Saisie à chaque apparition du
+// clavier et effacerait les champs (notamment ceux tout juste remplis par la saisie vocale,
+// qui appelle .focus() après avoir posé les valeurs).
+var _lastMobileLiteState = null;
 function applyLayoutMode() {
   var viewportIsMobile = window.matchMedia('(max-width: ' + MOBILE_BREAKPOINT + 'px)').matches;
   var mobile = isMobileLite();
@@ -2763,7 +2779,8 @@ function applyLayoutMode() {
     linkEl.style.display = viewportIsMobile ? '' : 'none';
     linkEl.textContent = mobile ? 'Voir la version complète' : 'Revenir à la vue mobile';
   }
-  if (mobile) { showView('saisie', navTabs[0]); }
+  if (mobile && !_lastMobileLiteState) { showView('saisie', navTabs[0]); }
+  _lastMobileLiteState = mobile;
 }
 function toggleLayoutMode() {
   if (sessionStorage.getItem('forceFullView') === '1') sessionStorage.removeItem('forceFullView');
