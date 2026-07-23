@@ -573,6 +573,34 @@ function ensurePdfLoaded() {
   return loadScriptOnce('https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js')
     .then(function(){ return loadScriptOnce('https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.1/dist/jspdf.plugin.autotable.min.js'); });
 }
+var _logoDataUrlPromise = null;
+function loadLogoDataUrl() {
+  if (!_logoDataUrlPromise) {
+    _logoDataUrlPromise = fetch('assets/logo-icv.jpg')
+      .then(function(r){ return r.blob(); })
+      .then(function(blob){
+        return new Promise(function(resolve, reject){
+          var reader = new FileReader();
+          reader.onload = function(){ resolve(reader.result); };
+          reader.onerror = reject;
+          reader.readAsDataURL(blob);
+        });
+      });
+  }
+  return _logoDataUrlPromise;
+}
+// Les polices standards de jsPDF (Helvetica) n'ont pas le glyphe "Δ" (WinAnsi) : il ressort
+// sous forme de caractère cassé/illisible à l'impression. On le remplace par "Var." dans tout
+// texte injecté dans un PDF (en-têtes déjà réécrits sans Δ, mais aussi messages d'alertes qui
+// peuvent en contenir, ex. "ΔDensité initiale entre 10 et 20").
+function pdfSafeText(s) {
+  return String(s == null ? '' : s).replace(/Δ/g, 'Var. ').replace(/ {2,}/g, ' ').trim();
+}
+function fmtDateDMY(iso) {
+  if (!iso) return '—';
+  var p = String(iso).split('-');
+  return p.length === 3 ? (p[2] + '-' + p[1] + '-' + p[0]) : iso;
+}
 
 // ─── Persistance : cuves / mesures (privées, écriture ciblée par mutation) ───
 function mapSupabaseCuve(c) {
@@ -2285,18 +2313,27 @@ async function exportPDF() {
   if (!window.jspdf) { alert('La bibliothèque PDF n\'a pas pu se charger. Vérifiez votre connexion internet.'); return; }
   var cuvesExport = getExportCuves();
   if (!cuvesExport.length) { alert('Aucune cuve active à exporter.'); return; }
+  var logoData = null;
+  try { logoData = await loadLogoDataUrl(); } catch (e) {}
 
   var doc = new window.jspdf.jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+  var textX = 14;
+  if (logoData) {
+    var logoH = 10, logoW = logoH * (850 / 472); // ratio réel du fichier assets/logo-icv.jpg
+    doc.addImage(logoData, 'JPEG', 14, 8, logoW, logoH);
+    textX = 14 + logoW + 6;
+  }
 
   doc.setFontSize(14);
-  doc.text('Suivi de fermentation — Dernières mesures par cuve', 14, 14);
+  doc.setTextColor(90, 24, 82); // --c-brand
+  doc.text('Suivi de fermentation — Dernières mesures par cuve', textX, 14);
   doc.setFontSize(9);
   doc.setTextColor(120);
-  var subtitle = (currentUser ? 'Compte : ' + currentUser + ' — ' : '') + 'Généré le ' + new Date().toLocaleDateString('fr-FR');
-  doc.text(subtitle, 14, 20);
+  var subtitle = (currentUser ? 'Compte : ' + currentUser + ' — ' : '') + 'Généré le ' + fmtDateDMY(new Date().toISOString().slice(0,10));
+  doc.text(subtitle, textX, 20);
   doc.setTextColor(0);
 
-  var head = [['Cuve','Appellation','Couleur','Date','Densité','Temp.','ΔDens. init.','ΔDens./j','ΔDens./j max','Alertes actives']];
+  var head = [['Cuve','App.','Coul.','Date','Dens.','Temp.','Var. init.','Var./j','Var./j max','Alertes'].map(pdfSafeText)];
   var body = [];
 
   cuvesExport.forEach(function(c) {
@@ -2312,14 +2349,14 @@ async function exportPDF() {
       ? activeAl.map(function(a){ return '[ ] ' + a.message; }).join('\n')
       : 'OK Normale';
     body.push([
-      c.nom, c.appellation || '—', c.couleur || '—', last.date,
+      c.nom, c.appellation || '—', c.couleur || '—', fmtDateDMY(last.date),
       fmtDensite(last.densite),
       fmtDecimal(last.temperature, 1) + '°C',
       last.deltaInit !== undefined ? fmtDecimal(last.deltaInit, 0) : '—',
       lastV ? fmtDecimal(lastV.vitesse, 1) : '—',
       maxV !== null ? fmtDecimal(maxV, 1) : '—',
       alertCell
-    ]);
+    ].map(pdfSafeText));
   });
 
   doc.autoTable({
@@ -2327,13 +2364,13 @@ async function exportPDF() {
     body: body,
     startY: 26,
     styles: { fontSize: 8, cellPadding: 3, overflow: 'linebreak', valign: 'top' },
-    headStyles: { fillColor: [60, 90, 46], textColor: 255, fontStyle: 'bold', valign: 'middle' },
-    alternateRowStyles: { fillColor: [245, 245, 245] },
+    headStyles: { fillColor: [90, 24, 82], textColor: 255, fontStyle: 'bold', valign: 'middle', overflow: 'linebreak' },
+    alternateRowStyles: { fillColor: [248, 245, 247] },
     columnStyles: {
       0: { cellWidth: 24 },
       1: { cellWidth: 24 },
       2: { cellWidth: 16 },
-      3: { cellWidth: 20 },
+      3: { cellWidth: 22 },
       4: { cellWidth: 18 },
       5: { cellWidth: 14 },
       6: { cellWidth: 20 },

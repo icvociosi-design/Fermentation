@@ -118,6 +118,12 @@ dans cet ordre :
    du header. Le petit décalage cosmétique de 12px ajouté au premier passage n'était
    pas la cause et a été retiré (le nom atterrit maintenant exactement au ras de la
    barre de raccourcis, sans marge).
+8. **Export PDF (Dernières Mesures) mis en cohérence avec la refonte** : logo Groupe
+   ICV en en-tête (`loadLogoDataUrl()`, converti en data URL via `fetch`+
+   `FileReader` puis `doc.addImage`), en-tête de tableau recoloré en aubergine
+   (`--c-brand`), en-têtes de colonnes abrégés (`App.`, `Coul.`, `Dens.`, `Var.
+   init.`, …) et date reformatée `JJ-MM-AAAA`. Voir « Export PDF » plus bas pour le
+   détail du bug du caractère "Δ" et son correctif.
 
 ## Architecture des données (Supabase)
 
@@ -310,6 +316,28 @@ se fait depuis un écran plus large.
   `--c-blue`, `--c-green*`) sont **restées inchangées** — volontairement découplées
   de la marque pour ne pas mélanger identité visuelle et statut (ok/lent/stop/rapide).
 
+### Export PDF (`exportPDF()`, vue Dernières Mesures)
+
+- Logo en en-tête : `loadLogoDataUrl()` charge `assets/logo-icv.jpg` en data URL
+  (`fetch` + `FileReader`, mis en cache dans `_logoDataUrlPromise`) puis
+  `doc.addImage(...)` le place à gauche du titre. Échoue silencieusement (le PDF
+  se génère quand même sans logo) si le `fetch` échoue.
+- **Piège jsPDF/"Δ" illisible à l'impression** : les polices standards de jsPDF
+  (Helvetica, encodage WinAnsi) n'ont pas le glyphe "Δ" — il ressort sous forme de
+  caractère cassé. Pas seulement dans les en-têtes (redésignées en abrégés `App.`,
+  `Coul.`, `Dens.`, `Var. init.`, `Var./j`, `Var./j max` pour tenir en largeur et
+  éviter tout "Δ") : certains **messages d'alertes globales par défaut contiennent
+  aussi "Δ" en dur** (ex. `'ΔDensité initiale entre 10 et 20'`, voir
+  `ALERTES_DEFAULT`), et remontent tels quels dans la colonne Alertes du PDF. D'où
+  `pdfSafeText(s)`, appliqué à **toutes** les cellules (en-têtes et corps) juste
+  avant `doc.autoTable`, qui remplace "Δ" par "Var." plutôt que de ne corriger que
+  les en-têtes.
+- Dates au format `JJ-MM-AAAA` via `fmtDateDMY(iso)` (remplace l'affichage brut
+  `AAAA-MM-JJ` de `last.date`), y compris dans le sous-titre "Généré le …".
+- Couleurs alignées sur `--c-brand` (en-tête de tableau, titre) — les couleurs
+  sémantiques du texte d'alerte (vert "OK Normale", ambre) restent inchangées, même
+  logique de découplage que pour le reste de l'identité visuelle.
+
 ## Limites connues / suite possible
 
 - **Cuves non partagées entre comptes** : si plusieurs personnes doivent gérer les
@@ -373,3 +401,13 @@ vocale, backend Supabase/REST) :
   sont empilés** (ex. un header puis une barre de sous-navigation elle-même sticky
   juste en dessous), l'offset doit additionner la hauteur de *tous* les éléments
   empilés, pas seulement du premier — sinon la cible reste cachée sous le second.
+- **Les polices standards de jsPDF (Helvetica/WinAnsi) n'ont pas les glyphes
+  hors Latin-1** (ex. "Δ", et plus généralement tout caractère grec/spécial) —
+  ils ressortent cassés/illisibles à l'impression, sans erreur JS. Deux façons de
+  s'en sortir : embarquer une police custom (poids/complexité en plus), ou
+  substituer le caractère par un équivalent texte ASCII juste avant de l'injecter
+  dans le PDF. **Chercher toutes les sources possibles du caractère**, pas
+  seulement l'endroit où le bug a été repéré en premier (ici : les en-têtes de
+  colonnes codées en dur, mais aussi des messages d'alerte utilisateur stockés en
+  base qui contenaient le même caractère) — un correctif localisé à un seul
+  endroit laisse le bug réapparaître ailleurs.
