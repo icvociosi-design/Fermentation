@@ -8,12 +8,18 @@
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   :root {
-    --c-bg: #ffffff; --c-surface: #f5f5f5; --c-border: #e0e0e0; --c-text: #1a1a1a;
-    --c-muted: #6b6b6b; --c-green: #3c5a2e; --c-green-light: #eaf3de; --c-green-text: #3b6d11;
+    /* Identité de marque, inspirée du logo Groupe ICV (aubergine, magenta, sarcelle) */
+    --c-brand: #5A1852; --c-brand-dark: #3E0F39; --c-brand-light: #F5EAF2;
+    --c-accent: #A3186E; --c-accent-light: #FBEAF3;
+    --c-accent-2: #3C6E68; --c-accent-2-light: #E9F2F0;
+
+    --c-bg: #ffffff; --c-surface: #F8F5F7; --c-border: #E6DFE4; --c-text: #241A22;
+    --c-muted: #6E6270; --c-green: #3c5a2e; --c-green-light: #eaf3de; --c-green-text: #3b6d11;
     --c-amber: #faeeda; --c-amber-text: #854f0b; --c-red: #fcebeb; --c-red-text: #a32d2d;
     --c-blue: #e6f1fb; --c-blue-text: #185fa5;
     --radius-sm: 6px; --radius-md: 8px; --radius-lg: 12px;
     --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --shadow-card: 0 1px 2px rgba(36,26,34,.04), 0 4px 16px rgba(90,24,82,.05);
   }
   body { font-family: var(--font); background: var(--c-bg); color: var(--c-text); font-size: 14px; line-height: 1.5; }
   .app { padding: 16px; max-width: 980px; margin: 0 auto; }
@@ -25,47 +31,51 @@
   #admin-content-step { overflow-y:auto; }
   .admin-tab-pane { padding:32px 40px; }
   .header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0; flex-wrap: wrap; gap: 10px; padding-bottom: 12px; }
-  .header-title { font-size: 16px; font-weight: 600; }
-  .header-sub { font-size: 12px; color: var(--c-muted); margin-top: 2px; }
+  .header-brand { display: flex; align-items: center; gap: 12px; }
+  .header-logo { height: 38px; width: auto; display: block; flex-shrink: 0; }
+  .header-title { font-size: 16px; font-weight: 700; color: var(--c-brand); letter-spacing: -.01em; }
   .header-user { display: flex; align-items: center; gap: 10px; }
-  .user-badge { background: var(--c-green-light); color: var(--c-green-text); border-radius: 20px; padding: 4px 12px; font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+  .user-badge { background: var(--c-brand-light); color: var(--c-brand); border-radius: 20px; padding: 4px 12px; font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+  .brand-bar { height: 3px; margin: 0 -16px 0; background: linear-gradient(90deg, var(--c-brand), var(--c-accent) 55%, var(--c-accent-2)); }
 
   /* Login overlay */
   .login-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; z-index: 999; }
   .admin-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; z-index: 1000; }
-  .login-box { background: #fff; border-radius: var(--radius-lg); padding: 28px 32px; min-width: 300px; box-shadow: 0 8px 32px rgba(0,0,0,.18); }
+  .login-box { position: relative; overflow: hidden; background: #fff; border-radius: var(--radius-lg); padding: 30px 32px 28px; min-width: 300px; max-width: 340px; box-shadow: 0 12px 40px rgba(62,15,57,.18); }
+  .login-box::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 4px; background: linear-gradient(90deg, var(--c-brand), var(--c-accent) 55%, var(--c-accent-2)); }
   .admin-box-large { width: min(1100px, 95vw); max-height: 90vh; overflow: visible; display: flex; flex-direction: column; }
   .admin-content-scroll { overflow-y: auto; flex: 1; padding-right: 4px; }
-  .login-title { font-size: 17px; font-weight: 700; margin-bottom: 6px; }
+  .login-logo { height: 46px; width: auto; display: block; margin: 0 auto 16px; }
+  .login-title { font-size: 17px; font-weight: 700; margin-bottom: 6px; text-align: center; }
   .login-sub { font-size: 12px; color: var(--c-muted); margin-bottom: 18px; }
   .login-users { display: flex; flex-direction: column; gap: 7px; margin-bottom: 16px; max-height: 200px; overflow-y: auto; }
   .login-user-btn { padding: 9px 14px; border-radius: var(--radius-md); border: 1px solid var(--c-border); background: var(--c-surface); text-align: left; font-size: 13px; font-weight: 500; cursor: pointer; display: flex; align-items: center; gap: 8px; }
-  .login-user-btn:hover { background: var(--c-green-light); border-color: var(--c-green); }
+  .login-user-btn:hover { background: var(--c-brand-light); border-color: var(--c-brand); }
   .login-new { display: flex; gap: 8px; }
   .login-new input { flex: 1; }
   .login-sep { display: flex; align-items: center; gap: 10px; font-size: 11px; color: var(--c-muted); margin: 10px 0; }
   .login-sep::before, .login-sep::after { content:''; flex: 1 1 0; height:1px; background:var(--c-border); }
 
   .nav { display: flex; border-bottom: 1px solid var(--c-border); margin-bottom: 0; }
-  .sticky-top { position: sticky; top: 0; z-index: 100; background: var(--c-bg); border-bottom: 2px solid var(--c-border); padding: 12px 16px 0; margin: -16px -16px 0; box-shadow: 0 2px 8px rgba(0,0,0,.07); }
-  .nav-tab { padding: 8px 16px; font-size: 13px; cursor: pointer; color: var(--c-muted); border-bottom: 2px solid transparent; margin-bottom: -1px; background: none; border-top: none; border-left: none; border-right: none; font-family: var(--font); }
-  .nav-tab.active { color: var(--c-green); font-weight: 600; border-bottom-color: var(--c-green); }
+  .sticky-top { position: sticky; top: 0; z-index: 100; background: var(--c-bg); border-bottom: 2px solid var(--c-border); padding: 12px 16px 0; margin: -16px -16px 0; box-shadow: 0 2px 8px rgba(36,26,34,.06); }
+  .nav-tab { padding: 8px 16px; font-size: 13px; cursor: pointer; color: var(--c-muted); border-bottom: 2px solid transparent; margin-bottom: -1px; background: none; border-top: none; border-left: none; border-right: none; font-family: var(--font); transition: color .15s ease, border-color .15s ease; }
+  .nav-tab.active { color: var(--c-brand); font-weight: 600; border-bottom-color: var(--c-brand); }
   .nav-tab:hover:not(.active) { color: var(--c-text); }
 
-  .card { background: var(--c-bg); border: 1px solid var(--c-border); border-radius: var(--radius-lg); padding: 16px; margin-bottom: 12px; }
+  .card { background: var(--c-bg); border: 1px solid var(--c-border); border-radius: var(--radius-lg); padding: 16px; margin-bottom: 12px; box-shadow: var(--shadow-card); }
   .card-title { font-size: 11px; font-weight: 600; color: var(--c-muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 12px; }
 
   button { cursor: pointer; font-family: var(--font); }
-  .btn { padding: 7px 14px; border-radius: var(--radius-md); border: 1px solid var(--c-border); font-size: 13px; background: var(--c-surface); color: var(--c-text); font-weight: 500; }
-  .btn:hover { background: #ebebeb; }
-  .btn-primary { background: var(--c-green); color: #fff; border-color: var(--c-green); }
-  .btn-primary:hover { background: #2e4522; }
+  .btn { padding: 7px 14px; border-radius: var(--radius-md); border: 1px solid var(--c-border); font-size: 13px; background: var(--c-surface); color: var(--c-text); font-weight: 500; transition: background .15s ease, border-color .15s ease; }
+  .btn:hover { background: #efe9ed; }
+  .btn-primary { background: var(--c-brand); color: #fff; border-color: var(--c-brand); }
+  .btn-primary:hover { background: var(--c-brand-dark); border-color: var(--c-brand-dark); }
   .btn-danger { background: var(--c-red); color: var(--c-red-text); border-color: #f09595; }
   .btn-sm { padding: 3px 9px; font-size: 12px; }
 
   label { font-size: 12px; color: var(--c-muted); display: block; margin-bottom: 3px; }
   input, select { width: 100%; padding: 7px 10px; border: 1px solid var(--c-border); border-radius: var(--radius-sm); font-size: 13px; background: var(--c-bg); color: var(--c-text); font-family: var(--font); }
-  input:focus, select:focus { outline: 2px solid var(--c-green); outline-offset: 1px; border-color: transparent; }
+  input:focus, select:focus { outline: 2px solid var(--c-brand); outline-offset: 1px; border-color: transparent; }
 
   .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
@@ -101,8 +111,8 @@
   .alert-table .cond-empty { color: var(--c-muted); font-size: 13px; font-style: italic; }
   .alert-table input.nom-input { width: 130px; }
   .formule-textarea { width: 260px; min-width: 180px; min-height: 32px; max-width: 100%; height: 32px; font-family: monospace; font-size: 13px; padding: 6px 8px; border: 1px solid var(--c-border); border-radius: var(--radius-sm); resize: both; overflow: auto; line-height: 1.4; color: var(--c-text); background: var(--c-bg); }
-  .formule-textarea:focus { outline: 2px solid var(--c-green); outline-offset: 1px; border-color: transparent; }
-  .formula-help-item:hover { background: var(--c-green-light); }
+  .formule-textarea:focus { outline: 2px solid var(--c-brand); outline-offset: 1px; border-color: transparent; }
+  .formula-help-item:hover { background: var(--c-brand-light); }
   .formula-help-item:last-child { border-bottom: none; }
   .alert-table input.msg-input { width: 150px; }
   .alert-table select.sev-sel { width: 70px; }
@@ -123,8 +133,8 @@
   .alert-tag-ok { background: var(--c-green-light); color: var(--c-green-text); }
 
   .cuve-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
-  .cuve-tab { padding: 5px 13px; border-radius: var(--radius-md); border: 1px solid var(--c-border); font-size: 13px; font-weight: 500; background: var(--c-bg); color: var(--c-muted); }
-  .cuve-tab.active { background: var(--c-surface); color: var(--c-text); border-color: #aaa; }
+  .cuve-tab { padding: 5px 13px; border-radius: var(--radius-md); border: 1px solid var(--c-border); font-size: 13px; font-weight: 500; background: var(--c-bg); color: var(--c-muted); transition: background .15s ease, border-color .15s ease, color .15s ease; }
+  .cuve-tab.active { background: var(--c-brand-light); color: var(--c-brand); border-color: var(--c-brand); font-weight: 600; }
   .cuve-tab:hover:not(.active) { background: var(--c-surface); }
 
   .alert-banner { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: var(--radius-md); font-size: 12px; margin-bottom: 8px; }
@@ -162,7 +172,7 @@
 
   /* Chart annotations (alert lines) rendered as dataset lines */
   .cuve-name-input { font-size: 15px; font-weight: 600; border: none; background: transparent; color: var(--c-text); padding: 2px 4px; border-radius: 4px; border-bottom: 1px solid transparent; width: 200px; font-family: var(--font); }
-  .cuve-name-input:focus { outline: none; border-bottom-color: var(--c-green); }
+  .cuve-name-input:focus { outline: none; border-bottom-color: var(--c-brand); }
 
   .empty { text-align: center; padding: 32px 16px; color: var(--c-muted); font-size: 13px; }
   .empty-icon { font-size: 28px; margin-bottom: 10px; }
@@ -189,20 +199,26 @@
   .btn-del-user:hover { background: #f5c6c6; }
 
   /* Vue mobile allégée : cibles tactiles plus grandes sur la Saisie rapide */
-  body.mobile-lite .saisie-table input[type="text"] { padding: 10px 10px; font-size: 16px; }
-  body.mobile-lite .saisie-table td, body.mobile-lite .saisie-table th { padding: 10px 8px; }
+  body.mobile-lite .saisie-table input[type="text"] { padding: 10px 8px; font-size: 16px; }
+  body.mobile-lite .saisie-table td, body.mobile-lite .saisie-table th { padding: 8px 4px; }
   /* Sur mobile, la colonne Alertes est masquée pour ne garder que 4 colonnes et éviter que
      les boutons d'action (ex. "Terminer") ne débordent du cadre visible. Les colonnes
-     restantes sont aussi resserrées : sans ça, le nom de cuve + les deux champs de saisie
-     à taille normale suffisent déjà à repousser le bouton d'action hors de l'écran. */
+     restantes sont aussi resserrées, et la dernière colonne (action) est la plus comprimée
+     (police réduite, libellé "Terminer" masqué, icône seule) : sans ça, le nom de cuve + les
+     deux champs de saisie à taille normale suffisent déjà à repousser le bouton hors écran. */
   body.mobile-lite .saisie-table .col-alerts { display: none; }
-  body.mobile-lite .saisie-table .cuve-name-cell { max-width: 84px; }
-  body.mobile-lite .saisie-table input.sr-dens-input { width: 70px; }
-  body.mobile-lite .saisie-table input.sr-temp-input { width: 56px; }
-  body.mobile-lite .saisie-table .col-action .btn { padding: 8px 10px; font-size: 12.5px; white-space: nowrap; }
+  body.mobile-lite .saisie-table .cuve-name-cell { max-width: 62px; font-size: 12px; }
+  body.mobile-lite .saisie-table input.sr-dens-input { width: 58px; }
+  body.mobile-lite .saisie-table input.sr-temp-input { width: 46px; }
+  body.mobile-lite .saisie-table .col-action { width: 1%; }
+  body.mobile-lite .saisie-table .col-action .btn { padding: 6px 5px; font-size: 10.5px; white-space: nowrap; }
+  body.mobile-lite .saisie-table .col-action .action-label { display: none; }
   body.mobile-lite .btn { padding: 10px 16px; font-size: 14px; }
   body.mobile-lite .header-title { font-size: 15px; }
-  body.mobile-lite .header-sub { display: none; }
+  body.mobile-lite .header-logo { height: 26px; }
+  /* Le panneau Paramètres reste réservé à la version PC : sur mobile, le bouton reste masqué
+     même pour un compte admin (currentIsAdmin est ignoré côté affichage sur cette vue). */
+  body.mobile-lite #btn-admin-settings { display: none !important; }
   #btn-voice.listening { background: var(--c-red); color: var(--c-red-text); border-color: #f09595; }
 </style>
 </head>
@@ -212,7 +228,8 @@
 <div id="login-overlay" class="login-overlay">
   <!-- Panneau principal de login -->
   <div id="login-panel" class="login-box">
-    <div class="login-title">🍷 Suivi de fermentation</div>
+    <img class="login-logo" src="assets/logo-icv.jpg" alt="Groupe ICV">
+    <div class="login-title">Suivi de fermentation</div>
     <div class="login-sub" id="login-sub-text">Connectez-vous pour retrouver vos données</div>
 
     <div id="login-loading" style="display:none;text-align:center;padding:16px 0;color:var(--c-muted);font-size:13px">Connexion…</div>
@@ -308,9 +325,11 @@
   <div class="sticky-top">
   <!-- Header -->
   <div class="header">
-    <div>
-      <div class="header-title">🍷 Suivi de fermentation</div>
-      <div class="header-sub">Densité &middot; Vitesse en ΔDensité/jour &middot; Alertes &middot; Graphiques</div>
+    <div class="header-brand">
+      <img class="header-logo" src="assets/logo-icv.jpg" alt="Groupe ICV">
+      <div>
+        <div class="header-title">Suivi de fermentation</div>
+      </div>
     </div>
     <div class="header-user">
       <div id="user-badge" class="user-badge" style="display:none"></div>
@@ -320,6 +339,7 @@
       <button class="btn btn-primary" onclick="addCuve()">+ Nouvelle cuve</button>
     </div>
   </div>
+  <div class="brand-bar"></div>
 
   <!-- Nav -->
   <div class="nav">
@@ -471,10 +491,28 @@ function setDetailCuve(i) {
     });
   }
 }
+// Défile jusqu'en haut du cadre d'une cuve (Détail cuves), en tenant compte de la hauteur
+// réelle du header collant (.sticky-top) — un simple scrollIntoView/#ancre native aligne
+// l'élément sur le tout haut de la fenêtre, qui se retrouve alors caché sous le header.
+function scrollToCuveAnchor(ci) {
+  var el = document.getElementById('cuve-anchor-' + ci);
+  if (!el) return;
+  // Deux barres collantes se superposent au-dessus des cartes en vue Détail cuves :
+  // le header (.sticky-top) ET la barre de raccourcis (#detail-shortcuts, elle-même
+  // sticky juste en dessous). Il faut compenser la hauteur des deux, sinon le nom de
+  // la cuve reste caché sous la barre de raccourcis.
+  var sticky = document.querySelector('.sticky-top');
+  var shortcuts = document.getElementById('detail-shortcuts');
+  var offset = (sticky ? sticky.getBoundingClientRect().height : 0)
+             + (shortcuts ? shortcuts.getBoundingClientRect().height : 0);
+  var y = el.getBoundingClientRect().top + window.pageYOffset - offset;
+  window.scrollTo({ top: Math.max(0, y), behavior: 'smooth' });
+}
 var activeTableCuve = 0;
 var chartVitesse = null;
 var chartTemp    = null;
-var PALETTE = ['#3c5a2e','#a0522d','#1a5276','#7b241c','#1e8449','#6c3483','#b7770d'];
+// Palette catégorielle (une couleur par cuve dans les graphiques), inspirée des teintes du logo Groupe ICV
+var PALETTE = ['#5A1852','#A3186E','#3C6E68','#8B5FA3','#C2467E','#1F4B45','#8FA83A'];
 
 // ─── Alertes par défaut ───────────────────────────────────────────────────────
 var DEFAULT_ALERTES = [
@@ -1789,10 +1827,7 @@ function archiveCuveDetail(i) {
   renderDetail();
   renderTableauResume();
   renderGraphiques();
-  setTimeout(function(){
-    var el = document.getElementById('cuve-anchor-' + i);
-    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }, 100);
+  setTimeout(function(){ scrollToCuveAnchor(i); }, 100);
 }
 function unarchiveCuve(i) {
   cuves[i].archived = false;
@@ -1874,9 +1909,10 @@ function renderSaisieRapide() {
     var activeAl = evalAlertesCuve(c);
     var alertHtml = renderAlertsCell(activeAl);
     var hasMesureDate = c.mesures.some(function(m){ return m.date === date; });
+    var dateCourt = date.slice(8,10) + '/' + date.slice(5,7);
     var actionBtn = hasMesureDate
-      ? '<button class="btn btn-danger btn-sm" title="Supprimer la mesure du ' + date + '" onclick=\'removeMesureDate(' + ci + ',' + JSON.stringify(date) + ')\'>✕ ' + date + '</button>'
-      : '<button class="btn btn-sm" title="Terminer la fermentation — retirer de la saisie (données conservées)" onclick="archiveCuve(' + ci + ')" style="color:var(--c-amber-text);border-color:#e0a030">⏹ Terminer</button>';
+      ? '<button class="btn btn-danger btn-sm" title="Supprimer la mesure du ' + date + '" onclick=\'removeMesureDate(' + ci + ',' + JSON.stringify(date) + ')\'>✕ ' + dateCourt + '</button>'
+      : '<button class="btn btn-sm" title="Terminer la fermentation — retirer de la saisie (données conservées)" onclick="archiveCuve(' + ci + ')" style="color:var(--c-amber-text);border-color:#e0a030">⏹<span class="action-label"> Terminer</span></button>';
     return '<tr id="sr-row-' + ci + '">'
       + '<td class="cuve-name-cell" onclick="selectVoiceCuve(' + ci + ')" title="Toucher pour aligner la saisie vocale sur cette cuve">' + escHtml(c.nom) + '</td>'
       + '<td><input type="text" inputmode="decimal" class="sr-dens-input" id="sr-dens-' + ci + '" placeholder="1080"></td>'
@@ -1934,7 +1970,7 @@ function renderDetail() {
         var ci = cuves.indexOf(c);
         var isArchived = !!c.archived;
         var isActive = (ci === activeDetailCuve);
-        return '<a href="#cuve-anchor-' + ci + '" style="text-decoration:none" onclick="setDetailCuve(' + ci + ')">'
+        return '<a href="#cuve-anchor-' + ci + '" style="text-decoration:none" onclick="setDetailCuve(' + ci + ');scrollToCuveAnchor(' + ci + ');return false;">'
           + '<button class="cuve-tab' + (isActive ? ' active' : '') + '" style="'
           + (isArchived ? 'color:var(--c-muted);border-color:var(--c-border);background:var(--c-surface);opacity:0.6' : '')
           + '">' + escHtml(c.nom) + (isArchived ? ' ⏹' : '') + '</button>'
@@ -2096,7 +2132,7 @@ function renderDetail() {
       +   '<div style="display:flex;gap:8px;flex-wrap:wrap">'
       +     '<button class="btn btn-sm" onclick="exportCuveCSV(' + ci + ')">⬇ CSV</button>'
       +     (c.archived
-          ? '<button class="btn btn-sm" onclick="unarchiveCuve(' + ci + ')" style="color:var(--c-green-text);border-color:var(--c-green)">↩ Réactiver</button>'
+          ? '<button class="btn btn-sm" onclick="unarchiveCuve(' + ci + ')" style="color:var(--c-green-text);border-color:var(--c-green-text)">↩ Réactiver</button>'
           : '<button class="btn btn-sm" onclick="archiveCuveDetail(' + ci + ')" style="color:var(--c-amber-text);border-color:#e0a030">⏹ Terminer</button>')
       +     '<button class="btn btn-danger btn-sm" onclick="removeCuve(' + ci + ')">🗑</button>'
       +   '</div>'
@@ -2443,7 +2479,7 @@ function renderGraphiques() {
   var metricsEl = document.getElementById('graph-metrics');
   var alertsEl  = document.getElementById('alertes-graph');
   if (!metricsEl) return;
-  if (!cuves.length) { metricsEl.innerHTML = ''; if(alertsEl) alertsEl.innerHTML = ''; var tEl = document.getElementById('vitesse-travaux-faits'); if (tEl) tEl.innerHTML = ''; drawCharts([], [], [], '#3c5a2e', [], []); return; }
+  if (!cuves.length) { metricsEl.innerHTML = ''; if(alertsEl) alertsEl.innerHTML = ''; var tEl = document.getElementById('vitesse-travaux-faits'); if (tEl) tEl.innerHTML = ''; drawCharts([], [], [], '#5A1852', [], []); return; }
 
   var c    = cuves[activeGraphCuve] || cuves[0];
   var calc = calcVitesse(c.mesures);
